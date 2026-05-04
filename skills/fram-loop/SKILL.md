@@ -1,39 +1,44 @@
 ---
 name: fram-loop
 description: >
-  Two-agent autonomous development pattern for shipping a complete user-facing feature
-  end-to-end without human intervention mid-run. A Builder agent implements each phase
-  with a fresh context; a Reviewer agent scores against a rubric and runs browser-level
-  E2E. Phase-based context resets prevent the model trying to wrap up early as context
-  fills. Output is a finished feature a real user can use, not an MVP for a developer
-  to review. Use only when the user EXPLICITLY opts in ("use the fram-loop", "run the
+  Two-agent autonomous loop (Builder + Reviewer) for shipping a complete user-facing
+  feature end-to-end across multiple phases without mid-run human input. Output is a
+  finished feature on an isolated harness branch with a PR opened back to the source
+  branch. Use only when the user EXPLICITLY opts in ("use the fram-loop", "run the
   fram-loop", "spin up the fram-loop", "run this through the fram-loop"). NEVER
   auto-invoke.
 license: MIT
+compatibility: >
+  Requires parallel sub-agent dispatch, git, gh CLI for PR creation, autonomous-
+  execution mode (Claude Code bypassPermissions or Codex full filesystem/network
+  access), and a verification driver appropriate to the deliverable (browser
+  automation MCP for UI; HTTP client / CLI shell / test database / library-
+  consumer harness for non-UI work). The runtime needed to exercise the
+  deliverable end-to-end (dev server, test DB, fresh shell, etc.) must be
+  available before dispatch.
+allowed-tools: Bash(git:*) Bash(gh:*) Bash(npm:*) Bash(npx:*) Bash(pnpm:*) Bash(yarn:*) Bash(bun:*) Bash(make:*) Bash(ps:*) Bash(lsof:*) Bash(curl:*) Read Write Edit Glob Grep Agent TodoWrite
 ---
 
 # fram-loop
 
-A two-agent autonomous development system. Kick it off with a spec, a plan, and a branch — get back a fully functioning feature, ready for the dev to review the final output (not the per-phase progress). The **Builder** implements code; the **Reviewer** evaluates it; the **Orchestrator** drives the loop and never pauses to ask the human for opinions mid-run.
-
-First reference run: Invite Form V2 (2026-03-26) — 5 phases, 17 commits, 98 tests, no human intervention beyond initial setup.
+A two-agent autonomous development system for any long-running coding work — features, refactors, migrations, performance projects, library design, large cleanups. Kick it off with a spec and a plan from the branch you want the work to land back on; the orchestrator creates an isolated harness branch off that tip and opens a PR back to it when done. You review the final output, not the per-phase progress. The **Builder** implements; the **Reviewer** evaluates; the **Orchestrator** drives the loop and never pauses to ask the human for opinions mid-run.
 
 ## Goal
 
-Output is a **fully functioning feature a USER (not a developer) can use end-to-end.** Not an MVP. Not a demo. Not "here's progress, want me to continue?" Freight-train to the goal — the dev gives a kickoff and sees a finished feature.
+Output is **the deliverable described in the spec, fully working end-to-end as the spec describes.** Not an MVP. Not a demo. Not "here's progress, want me to continue?" The shape of "fully working" depends on what's being built: a UI feature is one a real user can drive from entry-point to completion; an HTTP API is one whose endpoints return the right shape under real calls; a library is one whose public API works as documented in a fresh consumer; a migration is one that runs cleanly on a non-prod copy with rollback verified; a refactor is one that preserves behaviour and meets the spec's structural goal. Freight-train to that goal — the dev gives a kickoff and sees a finished deliverable on its own branch with a PR opened back to the source branch.
 
 This means:
 
 - The loop NEVER pauses for human opinion mid-run. No "before I proceed with phase N, please confirm…"
 - The loop is RESILIENT: a failed phase triggers adaptation (re-interpret spec, narrow fix scope, insert a recovery phase), not a halt.
-- The loop only stops in two states: `complete` (goal met, verified end-to-end as a real user) or `blocked` (genuinely unrecoverable — spec contradicts itself, environment broken, external dependency missing).
+- The loop only stops in three states: `complete` (goal met, verified end-to-end in production-shape, PR opened), `partial` (locally verified, but push/PR creation failed and a local PR handoff was written), or `blocked` (genuinely unrecoverable — spec contradicts itself, environment broken, external dependency missing after workaround attempts).
 - Halting because "5 fix rounds elapsed" is wrong. The right question is **"did I complete the goal?"** Keep going until the answer is yes (or until truly stuck).
 
 ## When to use this skill
 
 - The user explicitly opts in
-- The work is a multi-phase feature build (3+ phases is the sweet spot, 5+ shows clear value)
-- A spec and a harness-shaped plan exist (or you're prepared to author them as Phase 0)
+- The work is a multi-phase deliverable (3+ phases is the sweet spot, 5+ shows clear value) — feature, refactor, migration, library design, perf project, large cleanup
+- A spec exists, and a plan exists or you're prepared to author/reshape one before kickoff (see Prerequisites for the harness-shape constraints the plan must satisfy)
 - Each phase produces something independently testable end-to-end
 
 ## When NOT to use
@@ -47,7 +52,7 @@ This means:
 
 ## Prerequisites: spec + plan
 
-The loop assumes a **reviewed spec** and a **harness-shaped plan**. If either is missing, build it first as Phase 0 — do not start the loop without them.
+The loop **executes** a reviewed spec and a harness-shaped plan; it does not author either. If the spec is missing, the plan is missing, or the plan isn't yet in harness shape, build or reshape it as preparation work before kickoff. Both are human-reviewed before the loop starts.
 
 ### No spec yet
 
@@ -62,7 +67,7 @@ Run `superpowers:writing-plans` (or equivalent) with these constraints handed in
 - **Each task is small enough to split into two commits** — a test commit (Red) followed by the impl commit.
 - **3+ phases minimum**; 5+ is where the loop really shines.
 - **Explicit phase boundaries** with clear entry/exit criteria.
-- **Server-contract changes flagged in the task description** so the Builder prompt can include the call-site enumeration check (see Defaults §3).
+- **Interface-boundary changes flagged in the task description** so the Builder prompt can include the call-site enumeration check (see Defaults §3).
 
 A plan that lacks these properties degrades the run — fix the plan before starting.
 
@@ -70,15 +75,20 @@ A plan that lacks these properties degrades the run — fix the plan before star
 
 ## Run state: plan-dir layout (memory + progress on disk)
 
-Every run lives in a single directory. **Two things go on disk:** a per-feature `README.md` (live progress + resume guide + state machine) and per-phase `phases/phase-N/` files (memory of every prompt sent and report received). Together they make the run **resumable from a fresh session** — the conversation history is not required.
+Every run lives in a single directory. **Two things go on disk:** a per-feature `RUN.md` (live progress + resume guide + state machine) and per-phase `phases/phase-N/` files (memory of every prompt sent and report received). Together they make the run **resumable from a fresh session** — the conversation history is not required.
 
 ### Standard plan-dir layout
 
 ```
 plan/<feature-name>/
-  README.md                              # live progress: Phase Status table, state machine, resume guide, run config
+  RUN.md                              # live progress: Phase Status table, state machine, resume guide, run config
   spec.md                                # human-reviewed feature spec
   plan.md                                # phased implementation plan
+  baselines/
+    baseline.md                          # Phase 0 command matrix + comparison rules
+    lint.txt                             # full lint output at source branch tip
+    test.txt                             # full test output at source branch tip
+    typecheck.txt                        # full typecheck output at source branch tip
   phases/
     phase-N/
       builder-prompt.md                  # verbatim prompt sent to the Builder
@@ -93,48 +103,75 @@ plan/<feature-name>/
 
 All files persist as audit trail. Nothing is deleted at the end of a run — these are the institutional memory of how the feature got built.
 
-### README.md sections (required)
+### RUN.md sections (required)
 
-The README.md is the load-bearing file. Required sections, in this order:
+The RUN.md is the load-bearing file. Required sections, in this order:
 
 1. **Header** — branch, started date, current status (e.g. `🏗️ PHASE 3 BUILDER_RUN`), last updated
 2. **What this folder is** — one paragraph + the layout block above
-3. **Run Configuration** — rubric thresholds, model routing, project skills, known test failures (see schema below)
+3. **Run Configuration** — source branch, harness branch, PR target, rubric thresholds, model routing, project skills, baseline commands, known test failures (see schema below)
 4. **TDD discipline (this run)** — the per-task test→impl rule restated
 5. **Quick resume guide (for a fresh session)** — exact steps to pick up mid-run
-6. **Status state machine** — PENDING → BUILDER_RUN → BUILDER_DONE → REVIEWER_RUN → REVIEWER_DONE → PASSED | FIX_ROUND_K | BLOCKED
+6. **Status state machine** — PENDING → BUILDER_RUN → BUILDER_DONE → REVIEWER_RUN → REVIEWER_DONE → PASSED | FIX_ROUND_K | FINAL_VERIFY | PR_OPEN | PARTIAL | BLOCKED
 7. **Dispatch templates** — copy-pasteable Agent-call snippets that reference `phases/phase-N/builder-prompt.md` etc.
 8. **Phase Status table** — the live progress tracker (one row per phase, updated after every transition)
-9. **Operating notes** — skills always loaded, pre-existing failures, browser verification preference, "when in doubt" pointer
+9. **Operating notes** — skills always loaded, pre-existing failures, verification driver preference (browser, HTTP client, CLI shell, test DB, etc.), "when in doubt" pointer
 
-### Run Configuration block (in README.md)
+### Run Configuration block (in RUN.md)
 
-A short structured section near the top — keeps the per-run config human-readable in the same file the orchestrator reads to resume. Markdown, not JSON.
+A short structured section near the top — keeps the per-run config human-readable in the same file the orchestrator reads to resume. Markdown, not JSON. The example below is for a Nuxt UI feature; rubric, baseline commands, and skills swap for your stack and deliverable shape.
 
 ```markdown
 ## Run Configuration
 
-- **Rubric thresholds:** Functionality ≥ 4, Design Quality ≥ 4, Accessibility ≥ 3, Code Quality ≥ 4
+- **Source branch:** feature/current-work
+- **Source SHA:** 123abcd
+- **Harness branch:** fram/feature-current-work-checkout-redesign-123abcd
+- **PR target:** feature/current-work
+- **Rubric (active criteria + thresholds):** Functionality ≥ 4, Code Quality ≥ 4, Design Quality ≥ 4, Accessibility ≥ 3
+- **Verification driver:** browser automation (Claude in Chrome MCP)
+- **Baseline commands:**
+  - Lint: `npm run lint -- --max-warnings=0`
+  - Tests: `npm run test -- --run`
+  - Typecheck: `npm run typecheck`
 - **Model routing:**
   - Builder (capability work): claude-opus-4-7
   - Builder (mechanical): claude-sonnet-4-6
   - Reviewer: claude-opus-4-7
   - Commit-agent: claude-haiku-4-5
-- **Skills always loaded in agent prompts:** /nuxt4, /goodgest-design (UI phases), /i18n-sync (Phase 2 only)
+- **Skills always loaded in agent prompts:** /nuxt4, /design-system (UI phases), /i18n-sync (Phase 2 only)
 - **Known pre-existing failures (don't conflate with regressions):**
-  - 82 baseline test failures (per security audit Round 2)
+  - 82 baseline test failures (per prior security audit)
   - 405 lint warnings (`no-explicit-any` in test mocks)
-  - Legacy specs: `DashboardSidebar.spec.ts`, `dashboard/index.spec.ts`, `customer.spec.ts`
+  - Legacy specs (don't fail the run if these are already broken at baseline)
 ```
 
-### Phase Status table (in README.md)
+### Setup Phase 0: branch + baseline
+
+Before dispatching Phase 1, the Orchestrator creates an isolated harness branch from the current branch tip:
+
+1. Resolve `source_branch=$(git rev-parse --abbrev-ref HEAD)` and `source_sha=$(git rev-parse --short HEAD)`.
+2. Create `harness_branch=fram/<source-leaf>-<feature-slug>-<source-sha>` from that exact source tip. Sanitize slashes in the source leaf (`feature/foo` → `feature-foo`). If the branch exists locally or on origin for the same source SHA, reuse/resume it; if it exists for a different SHA, mint a new branch with the new SHA. Never force-push.
+3. Set the PR target to `source_branch` (not `main` unless the user explicitly started from `main` and project rules allow it).
+4. Capture baseline outputs in `plan/<feature>/baselines/` before any feature edits. Record command, exit code, timestamp, source branch, source SHA, and output path in `baseline.md`.
+
+The branch is load-bearing: Red test commits, recovery commits, plan artifacts, and implementation commits all live on the harness branch. The user's source branch is left untouched. Final delivery is a PR from the harness branch back to the source branch.
+
+Baseline comparison rule: Reviewers verify **no new debt**, not "the full repo became clean." For each phase:
+
+- Touched files must pass scoped lint with strict warnings (`npx eslint <touched-files> --max-warnings=0` or project equivalent).
+- Full lint/test/typecheck may fail only if the failure set is at-or-below the Phase 0 baseline and no failing diagnostic points at touched files unless it already existed at baseline.
+- Any new full-suite failure, new lint diagnostic, or new type diagnostic introduced by the harness branch fails Code Quality, even if the command already failed at baseline.
+- If a phase intentionally fixes baseline debt, update `baseline.md` with the new lower count and the commit that improved it. Never raise the baseline silently.
+
+### Phase Status table (in RUN.md)
 
 Updated after every state transition. One row per phase.
 
 ```markdown
 | # | Phase | Status | Builder | Reviewer | Fix rounds | Last commit | Notes |
 |---|---|---|---|---|---|---|---|
-| 1 | Mechanical cleanup (4 tasks) | **PASSED** | done (a886dc134) | done (acdc0ece9) — PASS, 5/5/4/5 | 0 | `81eefdf` | TDD experiment WORKED |
+| 1 | Mechanical cleanup (4 tasks) | **PASSED** | done (a886dc134) | done (acdc0ece9) — PASS, 5/5/4/5 | 0 | `81eefdf` | All criteria above threshold |
 | 2 | i18n of validation strings (3 tasks) | **BUILDER_RUN** | dispatched 2026-05-01 14:22 | — | — | — | — |
 ```
 
@@ -148,64 +185,39 @@ Format:
 # Phase N — Carry-forward
 
 - **CF-N.1** — `app/components/Foo.vue:47` — `vue/no-v-html` warning. Fix in next phase by replacing innerHTML with a sanitized `<DOMPurify />` wrapper.
-- **CF-N.2** — `app/composables/useBar.ts:120` — duplicate request-shape definition; consolidate with the typed client in Phase N+2.
+- **CF-N.2** — `services/payments/handlers.go:120` — duplicate request-shape definition; consolidate with the typed client in Phase N+2.
 ```
 
 The next phase's Builder prompt MUST include the prior phase's carry-forward verbatim under a "Carry-forward fixes from prior reviews" section.
 
-### Why this layout (and why no state.json)
+### Why this layout
 
 Three properties:
 
-1. **Resumable from a fresh session.** Read `README.md` → find the first phase row not `PASSED` → read that phase's folder → act. Conversation history not required.
+1. **Resumable from a fresh session.** Read `RUN.md` → find the first phase row not `PASSED` → read that phase's folder → act. Conversation history not required.
 2. **Inspectable.** A human peeking at the run reads markdown — no JSON parsing, no schema knowledge.
-3. **Loose ledger, not a controller.** README.md is a memory of where we are, not an instruction set for what to do next. The loop should still adapt — re-interpret spec, narrow fix scope, insert a recovery phase — based on what's actually happening.
-
-An earlier draft of this skill proposed a `state.json` file. **It is not used** — README.md already does the progress role, and a JSON file in parallel would just diverge from the markdown. Resilience over process.
+3. **Loose ledger, not a controller.** RUN.md is a memory of where we are, not an instruction set for what to do next. The loop should still adapt — re-interpret spec, narrow fix scope, insert a recovery phase — based on what's actually happening.
 
 ---
 
 ## Architecture
 
-```
-Spec + Plan + README.md (Run Config + Phase Status)
-    ↓
-┌──────────────────────────────────────────────┐
-│  Phase N                                      │
-│                                               │
-│  Orchestrator writes phases/phase-N/          │
-│    builder-prompt.md, dispatches Builder      │
-│  Builder reads: spec, plan (phase N tasks),   │
-│    git log, prior phases' carry-forward.md,   │
-│    key files                                  │
-│  Builder implements tasks, commits each one   │
-│  Builder terminates → orchestrator writes     │
-│    builder-report.md + updates Phase Status   │
-│                                               │
-│  Orchestrator writes reviewer-prompt.md       │
-│    (with builder-report appended), dispatches │
-│  Reviewer: code review + browser E2E +        │
-│    rubric scoring (1–5 per criterion)         │
-│  Reviewer terminates → orchestrator writes    │
-│    reviewer-report.md + updates Phase Status  │
-│                                               │
-│  All criteria ≥ threshold  → write            │
-│    carry-forward.md, advance to Phase N+1     │
-│  Any criterion fails       → write            │
-│    fix-rounds/round-K-builder.md, dispatch    │
-│  Truly stuck                → BLOCKED         │
-└──────────────────────────────────────────────┘
-    ↓ (repeat per phase)
-Final verification (spec compliance + E2E user flow)
-    ↓
-COMPLETE
-```
+Each phase is a Builder→Reviewer round-trip on disk:
+
+1. **Orchestrator** writes `phases/phase-N/builder-prompt.md`, dispatches Builder.
+2. **Builder** reads spec + plan (phase-N tasks) + git log + prior `carry-forward.md` + key files. Implements tasks (test commit → impl commit per task) and terminates.
+3. **Orchestrator** writes `builder-report.md`, then `reviewer-prompt.md`, dispatches Reviewer.
+4. **Reviewer** reads code, runs lint/test/typecheck against the Phase 0 baseline, exercises the deliverable end-to-end (browser MCP for UI; HTTP/CLI/DB/library invocation for non-UI — see Defaults §2), and scores the rubric (1–5 per criterion with file:line evidence). Terminates.
+5. **Orchestrator** writes `reviewer-report.md`, updates the Phase Status table.
+6. All criteria ≥ threshold → write `carry-forward.md`, advance to Phase N+1. Any fails → write `fix-rounds/round-K-builder.md`, dispatch fix-Builder. Truly stuck → BLOCKED.
+
+After the last phase passes, the orchestrator runs final verification (spec re-walk, end-to-end user-flow exercise, security check, full suite/lint/typecheck against baseline, push, PR creation) before declaring `complete`.
 
 ### Roles
 
 - **Builder** — implements code. Full edit access. Receives spec, plan section, git history, prior carry-forward, and (on fix rounds) reviewer feedback. **Never self-evaluates.**
-- **Reviewer** — evaluates the running app + code quality. Read-only code access + browser automation. Scores against the rubric. **Never implements.**
-- **Orchestrator** — the parent conversation. Writes per-phase prompts/reports/carry-forward to disk, updates the README.md Phase Status table, dispatches agents. Never restarts an agent's work itself; never pauses to ask the human for opinions.
+- **Reviewer** — evaluates the running deliverable + code quality. Read-only code access + verification tools (browser automation for UI; HTTP / CLI / DB / library-consumer invocation for non-UI). Scores against the rubric. **Never implements.**
+- **Orchestrator** — the parent conversation. Writes per-phase prompts/reports/carry-forward to disk, updates the RUN.md Phase Status table, dispatches agents. Never restarts an agent's work itself; never pauses to ask the human for opinions.
 
 ### Why context resets
 
@@ -223,16 +235,28 @@ This prevents **context anxiety** — the model trying to wrap up early as conte
 
 ## Scoring Rubric
 
+The rubric is **two universal criteria + one or more deliverable-shape criteria.** Numeric 1–5 scores are mandatory; Reviewer must give specific evidence (file:line, screenshots, command output, log excerpts) per criterion, not pass/fail. **All active criteria must meet their threshold for a phase to pass.** Don't score criteria that don't apply — scoring Accessibility on a CLI run dilutes the signal.
+
+### Universal (every run)
+
 | Criterion | What's evaluated | Default threshold |
 |---|---|---|
-| **Functionality** | Spec features work as described, tested via browser interaction | ≥ 4/5 |
-| **Design Quality** | Matches the patterns, visual language, and tone of the existing project. For projects with no documented design conventions, defer to platform defaults | ≥ 4/5 |
-| **Accessibility** | ARIA, keyboard navigation, focus management, screen reader support | ≥ 3/5 |
-| **Code Quality** | Lint clean, types correct, tests pass, no duplicated logic across files, framework conventions followed | ≥ 4/5 |
+| **Functionality** | The spec's acceptance criteria work end-to-end against the deliverable in production-shape | ≥ 4/5 |
+| **Code Quality** | Touched files lint-clean, types correct, tests pass, no duplicated logic across files, language/framework conventions followed | ≥ 4/5 |
 
-**All criteria must meet their threshold for a phase to pass.** Numeric scores are mandatory — Reviewer must provide 1–5 per criterion with specific evidence (file:line, screenshots), not pass/fail.
+### Deliverable-shape criteria (pick what applies)
 
-Thresholds are **project-configurable** via the README.md "Run Configuration" block. Defaults above are reasonable for a typical UI feature; a backend-only project might drop Design Quality and Accessibility from the active rubric.
+| Deliverable | Suggested additional criteria |
+|---|---|
+| UI / web app | Design Quality (matches existing visual language; defaults for greenfield) ≥ 4 ; Accessibility (ARIA, keyboard, focus, screen reader) ≥ 3 |
+| HTTP API / service | Contract Compliance (request/response shape, status codes, error semantics match spec) ≥ 4 ; Observability (logging, metrics, traces match project conventions) ≥ 3 |
+| Library / SDK | API Ergonomics (signatures, naming, docstrings, runnable examples) ≥ 4 ; Backward Compatibility (semver discipline; deprecations explicit) ≥ 4 |
+| CLI tool | UX (flag naming, help output, error messages, exit codes) ≥ 4 ; Cross-platform behaviour (where promised in spec) ≥ 3 |
+| DB / schema migration | Data Integrity (no row loss, invariants preserved, rollback verified) ≥ 5 ; Performance (lock window, replication impact) ≥ 4 |
+| Refactor / cleanup | Behaviour Preservation (existing tests pass + hand-driven regression of touched flows) ≥ 5 ; Structural Improvement (the spec's structural goal is achieved measurably) ≥ 4 |
+| Performance project | Performance Target (the spec's metric meets the spec's threshold under representative load) ≥ 5 ; Regression Safety (no measurable regression elsewhere) ≥ 4 |
+
+The active criteria + thresholds are declared in the RUN.md "Run Configuration" block. The Reviewer scores only the active set.
 
 ---
 
@@ -253,8 +277,8 @@ Phases each contain 2–4 closely related tasks, produce committed code, and end
 The Reviewer must:
 
 1. **Read actual code** — never trust the Builder's claims
-2. **Run tests and linters** — verify they pass; treat lint warnings as failures (`--max-warnings=0` or equivalent strictness)
-3. **Interact with the running app** via browser automation — starting from the phase where UI exists
+2. **Run tests and linters** — verify scoped touched-file lint is clean; compare full lint/test/typecheck against Phase 0 baselines and fail only on new debt/regressions
+3. **Exercise the deliverable end-to-end** in production-shape — browser for UI, real HTTP calls for APIs, fresh-shell invocation for CLIs, a tiny consumer for libraries, a non-prod copy for migrations (see Defaults §2). Starts from the phase where observable behaviour exists.
 4. **Score the rubric** — numeric 1–5 per criterion with evidence
 5. **Load project skills** — scan the project's `CLAUDE.md` / `AGENTS.md` for `/<skill-name>` mentions and invoke them before reviewing
 6. **Flag specific issues** — file paths, line numbers, what's wrong, what the fix should be
@@ -263,29 +287,32 @@ The Reviewer must:
 
 - Spec excerpt (what was supposed to be built)
 - Builder's report (what the Builder claims it built — explicitly: do NOT trust it)
-- Rubric criteria with thresholds (read from README.md "Run Configuration")
-- Browser automation steps for end-to-end verification
+- Rubric criteria with thresholds (read from RUN.md "Run Configuration")
+- Baseline command matrix + Phase 0 baseline outputs from `baselines/baseline.md`
+- End-to-end verification steps appropriate to the deliverable shape (browser automation for UI; real invocation for non-UI — see Defaults §2)
 - Lint + test commands to run
 - Required output format with scores table
 
 ---
 
-## Final verification (feature-complete gate)
+## Final verification and PR handoff
 
 After the last per-phase review passes, before the loop declares `complete`:
 
 1. **Re-read the spec.** Walk the spec section by section, not the plan. Confirm every requirement, acceptance criterion, and user-facing behaviour is delivered. The plan is implementation; the spec is what the user actually wanted.
-2. **End-to-end user-flow exercise.** Drive the feature in the browser as a real user would, from entry point to completion. No back-doors, no test fixtures that bypass the UI. If it can't be used by a real user, it is not done.
+2. **End-to-end exercise of the deliverable.** Drive it as it will actually be used: a UI feature in the browser as a real user, an API via real HTTP calls against the running service, a CLI from a fresh shell, a library via a tiny consumer importing the public API, a migration on a non-prod copy with rollback verified. No back-doors, no test fixtures that bypass the real surface. If it can't be used in production-shape, it is not done.
 3. **Run a project-appropriate security check.** This may be a security-focused subagent (e.g., `security-nuxt` if the project has it), a static analyser, a CI security job, or a manual checklist depending on what the project supports. If nothing is available, run a basic OWASP-shaped self-check (auth, input validation, SSRF, XSS, secrets in committed files).
-4. **Run the full test suite, full lint, full typecheck** across the entire feature surface (not just per-phase affected files). A regression in Phase 2 caused by a Phase 5 edit should be caught here.
+4. **Run the full test suite, full lint, full typecheck** across the entire feature surface (not just per-phase affected files). Compare to Phase 0 baselines; any new debt blocks completion. A regression in Phase 2 caused by a Phase 5 edit should be caught here.
+5. **Commit final run artifacts** — `RUN.md` state, phase reports, carry-forward files, baseline notes, final verification notes.
+6. **Push the harness branch and open a PR** back to the source branch. The PR body must include: spec path, plan path, final verification summary, browser walkthrough notes, baseline comparison summary, known residual risks, and exact commands a reviewer should run before merge.
 
-All four must pass before `phaseStatus: complete`. If any fail, dispatch a fix-Builder scoped to the specific gap and re-verify.
+All six must pass before `phaseStatus: complete`. If verification fails, dispatch a fix-Builder scoped to the specific gap and re-verify. If push or PR creation fails after the feature is locally verified, return `partial` with the exact branch name, target branch, local commit SHA, PR title/body draft, and the commands to retry (`git push -u origin <harness_branch>` and `gh pr create --base <source_branch> --head <harness_branch> ...`). Do not call the feature `complete` until the PR exists.
 
 ---
 
 ## Defaults applied to every run
 
-These apply unless explicitly overridden in the README.md "Run Configuration" block.
+These apply unless explicitly overridden in the RUN.md "Run Configuration" block.
 
 ### 1. Strict TDD discipline per task
 
@@ -302,19 +329,32 @@ If your first test attempt failed for the wrong reason (framework artefact, JSON
 
 The Reviewer verifies via `git log` that test commits precede impl commits per task. For at least one task per phase, the Reviewer also checks out the test commit and confirms it actually fails. Bundling test+impl drops Code Quality below threshold and fails the phase.
 
-### 2. Mandatory browser smoke for any UI-touching phase
+Because all work happens on the harness branch, Red commits do not pollute the user's source branch. Do not bypass hooks with `--no-verify`. If a repo hook blocks a Red commit because the targeted test fails, record the Red proof in `phases/phase-N/red-proof-task-X.md` (diff, command, failing output), then commit the test+impl together with a `TDD-HOOK-EXCEPTION:` footer naming the hook and proof file. The Reviewer treats this as acceptable only when the proof is complete and the final commit is green.
 
-Any phase that modifies user-visible behaviour requires Reviewer-level browser verification — NOT optional, NOT substitutable by unit tests. The Builder is also expected to do a developer-level smoke before claiming done on UI-touching tasks.
+### 2. Mandatory end-to-end smoke against the deliverable
 
-Use whatever browser automation the environment provides (Claude in Chrome MCP, Playwright MCP, or equivalent). If browser automation is unavailable, the Reviewer returns `BLOCKED — browser unavailable` rather than passing on tests alone.
+Any phase that changes observable behaviour requires Reviewer-level end-to-end verification of the deliverable as it'll actually be used — NOT optional, NOT substitutable by unit tests. The Builder also does a developer-level smoke before claiming done.
 
-Real example from prior run: Phase 4 of the participants run shipped a server-contract change (PATCH requires `expectedVersion`). The Builder updated the composable and one component but missed `SectionDialog.vue` which does its own `$fetch`. Unit tests passed because the SectionDialog spec didn't assert on request body shape. Browser smoke caught it on the first edit.
+The smoke driver matches the deliverable:
 
-### 3. Call-site enumeration when changing a server contract
+| Deliverable | Smoke driver |
+|---|---|
+| UI / web app | Browser automation (Claude in Chrome MCP, Playwright MCP, or equivalent) |
+| HTTP API / service | `curl`, `httpie`, or a typed client invoking real endpoints against the running service |
+| CLI tool | Run the binary with real flags from a fresh shell |
+| Library / SDK | A tiny consumer that imports the public API and exercises it |
+| DB / schema migration | Apply against a non-prod snapshot; verify forward + rollback + invariants |
+| Refactor / cleanup | Rerun the existing behaviour-asserting test suite plus a hand-driven regression of the touched flows |
 
-When a Builder prompt asks for a server-contract change (adding a required body field, changing a return shape, renaming an endpoint, switching to optimistic locking, etc.), the prompt MUST require the Builder to enumerate every CLIENT call site that hits the changed endpoint — not just the composable wrapper.
+If the smoke driver is unavailable for a phase that needs it, the Reviewer returns `BLOCKED — verification driver unavailable` rather than passing on unit tests alone.
 
-How to enumerate is project-specific (grep the API path, list usages of a typed client, search for the endpoint name). The Builder must do it; the Reviewer must rerun the same enumeration as part of verification. Each result must be either (a) updated in the same task or (b) explicitly noted as out-of-scope with justification.
+Common failure mode this defends against: a change to any interface boundary (HTTP endpoint shape, exported function signature, CLI flag schema, library API) where the Builder updates the obvious caller but misses a less-frequent caller that depends on the old shape. Unit tests pass because that caller's spec didn't assert on the changed surface. End-to-end smoke catches it on the first edit.
+
+### 3. Call-site enumeration when changing an interface boundary
+
+When a Builder prompt asks for a change to any interface boundary that other code depends on — HTTP endpoint shape, exported function or method signature, CLI flag schema, database column shape, message format, public library API — the prompt MUST require the Builder to enumerate every dependent call site, not just the obvious wrapper.
+
+How to enumerate is project-specific (grep the path/symbol, list usages of a typed client, search for the endpoint or function name, query the schema graph). The Builder must do it; the Reviewer must rerun the same enumeration as part of verification. Each result must be either (a) updated in the same task or (b) explicitly noted as out-of-scope with justification.
 
 ### 4. Phase sizing & timeout protocol
 
@@ -343,11 +383,11 @@ When unsure: dispatch a fresh Reviewer. Default is delegation; pickup is the exc
 
 ### 5. Model routing defaults
 
-The loop is provider-agnostic. Defaults below; override in the README.md "Run Configuration" block.
+The loop is provider-agnostic. Defaults below; override in the RUN.md "Run Configuration" block.
 
 | Role | Anthropic default | OpenAI Codex default | Notes |
 |---|---|---|---|
-| Builder (capability work) | claude-opus-4-7 | gpt-5.5 (fallback gpt-5.4) | UI logic, server logic, complex changes |
+| Builder (capability work) | claude-opus-4-7 | gpt-5.5 (fallback gpt-5.4) | Complex application logic, contract design, architecture decisions |
 | Builder (mechanical) | claude-sonnet-4-6 | gpt-5.4-mini | Renames, dead-code removal, mechanical sweeps |
 | **Reviewer (always)** | **claude-opus-4-7** | **gpt-5.5 (fallback gpt-5.4)** | Bad review = wasted fix round; never cheap-out |
 | Commit agent (recovery) | claude-haiku-4-5 | gpt-5.4-mini | Mechanical commit-only work |
@@ -358,23 +398,38 @@ The Reviewer always gets the best available model in the environment. Cheap-out 
 
 There is no fixed fix-round cap. The loop continues until one of:
 
-- `complete` — goal met, final verification passes
-- `blocked` — genuinely unrecoverable (spec contradicts itself, environment broken, external dependency missing)
+- `complete` — goal met, final verification passes, harness branch pushed, PR opened
+- `partial` — feature is locally verified, but network/auth/remote failure prevented push or PR creation; local PR handoff written
+- `blocked` — genuinely unrecoverable (spec contradicts itself, environment broken, external dependency missing after workaround attempts)
 
 Replace "have I exceeded N rounds?" with **"did I complete the goal?"** If the answer is no and a path forward exists (even if tortuous), continue. If the answer is no and there is no path forward, return BLOCKED with a specific diagnosis.
 
-The fix-round count is logged in the README.md Phase Status table for retrospective analysis but is not a halting condition.
+The fix-round count is logged in the RUN.md Phase Status table for retrospective analysis but is not a halting condition. When stuck, suspect misframing first: the plan's task split is wrong, the spec section is ambiguous, the rubric threshold doesn't fit this surface, a dependency conflict surfaced mid-run. All cheap to fix once recognized — see §7.
 
 ### 7. Resilience over rigidity
 
 The loop should ADAPT, not HALT, when something doesn't work cleanly:
 
 - A phase fails repeatedly with the same root cause → re-interpret the spec section, consider whether the plan's task split is wrong, possibly insert a recovery phase
-- A test consistently fails for an environmental reason → add it to README.md "Known pre-existing failures" and continue
+- A test consistently fails for an environmental reason → add it to RUN.md "Known pre-existing failures" and continue
 - A new constraint surfaces mid-run (an API limit, a dependency conflict) → record in carry-forward, narrow the next Builder's scope, continue
 - A Reviewer keeps failing the same criterion despite mechanical fixes → re-examine whether the rubric threshold is too tight for this specific surface, or whether the underlying expectation is unrealistic
 
 Stuck means truly stuck — not "this is harder than I expected."
+
+### 8. Autonomous runtime + workaround-first blocking
+
+This skill is designed for a high-autonomy environment. Run it in Claude Code with autonomous/bypass permissions or in Codex with full filesystem/network access and approval mode that will not stop mid-run for routine commands. Browser automation, git, package scripts, and PR creation must be available up front.
+
+If a capability is missing, the Orchestrator tries workarounds before asking the user:
+
+- Verification driver unavailable → for UI work, try alternate browser drivers (Chrome MCP, Playwright MCP, local Playwright); for non-UI work, fall back to the project's documented invocation path (curl + the dev server, the project's CLI binary, a test-DB instance, a small example consumer for libraries). Return `blocked` only if no path can exercise the deliverable end-to-end.
+- Runtime environment unavailable → start the dev server / test DB / sandbox if the project documents a command and no conflicting instance is running; otherwise return `blocked` with the missing command/env.
+- Auth / session / credentials unavailable → use seeded/dev credentials, fixture setup, or a documented test login. If none exists and the deliverable requires auth, return `blocked`.
+- GitHub auth unavailable → complete local verification, commit artifacts, and return `partial` with exact push/PR retry commands and a draft PR body.
+- Tooling command unavailable → use the nearest project-equivalent command from README/package scripts. If no equivalent exists, mark that check `unavailable` in baseline and reviewers must not treat it as pass/fail.
+
+Do not pause for preference questions. Only return `blocked` when the next action truly requires a human credential, policy decision, external service, or contradictory spec resolution.
 
 ---
 
@@ -384,95 +439,22 @@ Stuck means truly stuck — not "this is harder than I expected."
 
 - [ ] Spec exists and reviewed by the human (else: `superpowers:brainstorming` first)
 - [ ] Plan exists, harness-shaped (2–4 tasks per phase, each phase testable, tasks splittable into test+impl) — else: `superpowers:writing-plans` with constraints
+- [ ] Running in autonomous mode (Claude Code bypass/auto permissions, or Codex full access/no approval interruptions)
+- [ ] Source branch + source SHA resolved
+- [ ] Harness branch created from source branch tip (`fram/<source-leaf>-<feature-slug>-<source-sha>`)
+- [ ] PR target recorded as the source branch
 - [ ] Plan dir created at `plan/<feature>/` with `spec.md` + `plan.md`
-- [ ] `README.md` scaffolded with all required sections (header, layout block, Run Configuration with rubric thresholds + model routing + project skills scanned from CLAUDE.md/AGENTS.md + known test failures, TDD discipline, resume guide, state machine, dispatch templates, empty Phase Status table, operating notes)
+- [ ] `RUN.md` scaffolded with all required sections (header, layout block, Run Configuration with rubric thresholds + model routing + project skills scanned from CLAUDE.md/AGENTS.md + known test failures, TDD discipline, resume guide, state machine, dispatch templates, empty Phase Status table, operating notes)
+- [ ] Phase 0 baselines captured in `plan/<feature>/baselines/` for lint, tests, and typecheck (or explicitly marked unavailable)
 - [ ] Permissions configured (`Bash(*)`, browser MCP tools, etc.)
 - [ ] Agent mode set to autonomous operation (`bypassPermissions` or equivalent)
 - [ ] Dev server running (do not restart it)
-- [ ] Authenticated browser session available if the feature needs auth
+- [ ] Verification driver available for the deliverable shape (authenticated browser for UI; HTTP client for API; fresh shell for CLI; test DB for migrations; library-consumer harness for SDK work)
 - [ ] **TDD discipline confirmed default-on for every task**
 - [ ] **Phase sizing checked** — no phase >5 tasks without an escape hatch in the Builder prompt
-- [ ] Reviewer prompt template will pull thresholds from README.md "Run Configuration" (not hard-coded into the skill template)
+- [ ] Reviewer prompt template will pull thresholds from RUN.md "Run Configuration" (not hard-coded into the skill template)
 
-### Builder prompt structure
+### Builder + Reviewer prompt templates
 
-```
-You are a Builder agent implementing Phase N (Tasks X–Y) of [Feature].
+See [references/templates.md](references/templates.md) for the verbatim Builder and Reviewer prompt scaffolds. Copy into `phases/phase-N/builder-prompt.md` and `phases/phase-N/reviewer-prompt.md`, substituting placeholders before dispatch.
 
-## Your Mission
-[What to build, where to work, what branch]
-
-## Before You Begin
-1. Read the spec: [path]
-2. Read the plan: [path] — focus on Phase N
-3. Check git log for prior work
-4. Read the prior phase's carry-forward fixes: [inline contents of phases/phase-(N-1)/carry-forward.md]
-5. Read these files (modified by prior phases, auto-generated from `git diff <base>..HEAD --name-only`): [list]
-
-## Critical Rules
-- [Project-specific rules from CLAUDE.md / AGENTS.md]
-- [Framework conventions from project skills]
-- **Strict TDD per task: test commit (Red) → impl commit. Match project commit-message style. Never bundle.** RED-fix-forward refinement allowed once if the first test failed for the wrong reason.
-- Dev server is running — do NOT restart
-- **For server-contract changes:** enumerate every client call site of the changed endpoint and update or justify each.
-- **Context-pressure escape hatch:** if you feel context limits hitting, STOP and report `BLOCKED — context pressure after Task X`.
-
-## Tasks
-[Reference each task by spec/plan section — do NOT duplicate code into the prompt. Each task entry: which file gets the test, which file gets the impl, acceptance criteria.]
-
-## Browser smoke (UI-touching tasks only)
-For any task that modifies user-visible behaviour, after the impl commit drive the live UI to confirm the integration end-to-end. Inspect network requests for any new request-shape changes. Read console for new errors.
-
-## Report Format
-Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
-Per-task: test SHA → impl SHA, test results, files changed, browser-smoke notes, any concerns.
-```
-
-### Reviewer prompt structure
-
-```
-You are a Reviewer evaluating Phase N of [Feature].
-
-## IMPORTANT: Invoke [project skills from README.md "Run Configuration"] before reviewing.
-
-## What Was Built
-[Summary from the plan's Phase N]
-
-## What the Builder Claims
-[Builder's report — DO NOT TRUST IT, verify everything]
-
-## Rubric Thresholds (from README.md "Run Configuration")
-[Functionality ≥ X, Design Quality ≥ Y, Accessibility ≥ Z, Code Quality ≥ W]
-
-## Verification Steps
-1. **TDD discipline check:** `git log --oneline -<N>` and verify test→impl ordering per task. Spot-check at least one task by checking out its test commit and confirming it fails (Red was real). RED-fix-forward refinements acceptable if documented.
-2. Run tests: [project commands]
-3. Run lint with `--max-warnings=0` (or equivalent strictness)
-4. Run typecheck (filtered to touched surface if the project supports it)
-5. Read code: [specific files and what to check]
-6. **For server-contract changes:** rerun the call-site enumeration; confirm every result was updated or justified.
-7. **Browser smoke (MANDATORY for UI-touching phases):** drive the live UI via browser automation. If browser is unreachable, return `BLOCKED — browser unavailable`.
-
-## RUBRIC SCORING (MANDATORY)
-
-| Criterion | Threshold | Score (1–5) | Evidence |
-|---|---|---|---|
-| Functionality | ≥ X | __ | __ |
-| Design Quality | ≥ Y | __ | __ |
-| Accessibility | ≥ Z | __ | __ |
-| Code Quality | ≥ W | __ | __ |
-
-## Report Format
-- Scores table (above)
-- TDD compliance per task with SHAs + Red verification
-- Verification commands run
-- Issues list with severity / file:line / what's wrong / what to fix
-- Carry-forward fixes (any warnings/issues to feed into the next phase's Builder)
-- Verdict: PASS | FAIL (which criterion blocked it)
-```
-
----
-
-## Reference: prior run cost profile
-
-Invite Form V2 (2026-03-26) — 5 phases, 14 agent invocations total, 3 fix rounds. Phases 1 and 3 (mechanical tasks) passed first try. Phases 2, 4, 5 (UI-heavy) needed exactly 1 fix round each. Use this as a rough baseline when sizing your own run.
