@@ -1,0 +1,4 @@
+# Runtime artifacts from eval runs / brainstorm sessions
+.playwright-mcp/
+.superpowers/
+.DS_Store
