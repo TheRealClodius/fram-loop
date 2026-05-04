@@ -30,7 +30,7 @@ Output is **the deliverable described in the spec, fully working end-to-end as t
 
 This means:
 
-- The loop NEVER pauses for human opinion mid-run. No "before I proceed with phase N, please confirm…"
+- The loop NEVER pauses for human opinion mid-run. No "before I proceed with phase N, please confirm…" (Except as documented in §Defaults #9 for ephemeral/eval push targets, where final push is gated.)
 - The loop is RESILIENT: a failed phase triggers adaptation (re-interpret spec, narrow fix scope, insert a recovery phase), not a halt.
 - The loop only stops in three states: `complete` (goal met, verified end-to-end in production-shape, PR opened), `partial` (locally verified, but push/PR creation failed and a local PR handoff was written), or `blocked` (genuinely unrecoverable — spec contradicts itself, environment broken, external dependency missing after workaround attempts).
 - Halting because "5 fix rounds elapsed" is wrong. The right question is **"did I complete the goal?"** Keep going until the answer is yes (or until truly stuck).
@@ -180,16 +180,35 @@ Updated after every state transition. One row per phase.
 
 Written when a phase passes, before advancing. Every non-blocking warning the Reviewer raised goes here. **Always written, even if empty** — an empty `carry-forward.md` with the line "No carry-forward items." is the signal the phase is closed.
 
-Format:
+Each CF entry carries an explicit lifecycle state in square brackets. Format:
 
 ```markdown
 # Phase N — Carry-forward
 
-- **CF-N.1** — `app/components/Foo.vue:47` — `vue/no-v-html` warning. Fix in next phase by replacing innerHTML with a sanitized `<DOMPurify />` wrapper.
-- **CF-N.2** — `services/payments/handlers.go:120` — duplicate request-shape definition; consolidate with the typed client in Phase N+2.
+- **CF-N.1** [Open] — `app/components/Foo.vue:47` — `vue/no-v-html` warning. Fix in next phase by replacing innerHTML with a sanitized `<DOMPurify />` wrapper.
+- **CF-N.2** [Deferred-to-Phase-N+2] — `services/payments/handlers.go:120` — duplicate request-shape definition; consolidate when the typed client lands. Reason: requires the typed client from Phase N+2 plan section 3.
+- **CF-N.3** [Out-of-scope-v2] — `src/legacy/auth.ts:*` — legacy session-token shape; addressing requires the auth rewrite tracked in spec §11. Out of scope for this run.
 ```
 
-The next phase's Builder prompt MUST include the prior phase's carry-forward verbatim under a "Carry-forward fixes from prior reviews" section.
+State machine:
+
+```
+[Open]  →  picked up by next Builder
+   │
+   ├──→  [Addressed-in-Phase-K]   (CF closed; cited in Builder report's CF-resolution section)
+   ├──→  [Deferred-to-Phase-K]    (carried forward unchanged; reason required)
+   └──→  [Out-of-scope-v2]        (explicitly removed from this run; reason + spec/issue link required)
+```
+
+Rules:
+
+- Every CF starts as `[Open]` when first emitted by a Reviewer.
+- The next Builder's prompt requires explicit handling of every `[Open]` CF — Address, Defer, or move Out-of-scope (with reason).
+- A `[Deferred-to-Phase-K]` CF reappears in Phase K's carry-forward unchanged until Addressed.
+- An `[Out-of-scope-v2]` CF still exists in the run's history but does not propagate further.
+- The Orchestrator audits at phase close: an `[Open]` CF still open after the next Builder finishes is a tracking bug, not a feature; flag in RUN.md.
+
+The next phase's Builder prompt MUST include the prior phase's carry-forward verbatim under a "Carry-forward fixes from prior reviews" section, and the Builder's report MUST resolve each `[Open]` entry to one of the three terminal states.
 
 ### Why this layout
 
@@ -219,6 +238,8 @@ After the last phase passes, the orchestrator runs final verification (spec re-w
 - **Builder** — implements code. Full edit access. Receives spec, plan section, git history, prior carry-forward, and (on fix rounds) reviewer feedback. **Never self-evaluates.**
 - **Reviewer** — evaluates the running deliverable + code quality. Read-only code access + verification tools (browser automation for UI; HTTP / CLI / DB / library-consumer invocation for non-UI). Scores against the rubric. **Never implements.**
 - **Orchestrator** — the parent conversation. Writes per-phase prompts/reports/carry-forward to disk, updates the RUN.md Phase Status table, dispatches agents. Never restarts an agent's work itself; never pauses to ask the human for opinions.
+
+**Commit boundary.** Builders commit only source/test/config changes per the per-task TDD pattern (one test commit + one impl commit per task). The Orchestrator commits the run-state artefacts (`builder-report.md`, `reviewer-prompt.md`, `reviewer-report.md`, `carry-forward.md`, RUN.md state-table updates, baseline refreshes) as a single phase-closure commit after the Reviewer passes. This keeps the Builder's commit graph a clean record of feature work, and the Orchestrator's a clean record of process.
 
 ### Why context resets
 
@@ -326,11 +347,16 @@ For every task in every phase:
 
 #### RED-fix-forward exception (first-class)
 
-If your first test attempt failed for the wrong reason (framework artefact, JSON-import AST issue, environment quirk), you may commit a refinement before the impl commit that fixes the test to fail for the right reason. The Reviewer checks both Red states. Acceptable when transparent and well-documented; abuse drops Code Quality below threshold.
+If your first test attempt failed for the wrong reason (framework artefact, JSON-import AST issue, environment quirk), you may iterate on the test before the impl commit lands. RFF requires **either** form, not casual prose claims:
 
-The Reviewer verifies via `git log` that test commits precede impl commits per task. For at least one task per phase, the Reviewer also checks out the test commit and confirms it actually fails. Bundling test+impl drops Code Quality below threshold and fails the phase.
+- **(a) Separate refinement commit.** The original failing-test commit stays in the log; a follow-up commit rewrites the test to fail for the right reason; then the impl commit. The Reviewer reads both Red states from `git log`.
+- **(b) Proof file.** Write `phases/phase-N/red-proof-task-X.md` containing: the diff of the test rewrite, the command + output showing the original wrong-reason failure, the command + output showing the corrected right-reason failure, and a one-line reason. Then a single test commit (the corrected version) followed by the impl commit.
 
-Because all work happens on the harness branch, Red commits do not pollute the user's source branch. Do not bypass hooks with `--no-verify`. If a repo hook blocks a Red commit because the targeted test fails, record the Red proof in `phases/phase-N/red-proof-task-X.md` (diff, command, failing output), then commit the test+impl together with a `TDD-HOOK-EXCEPTION:` footer naming the hook and proof file. The Reviewer treats this as acceptable only when the proof is complete and the final commit is green.
+The Reviewer accepts either form. Absence of both — i.e. the Builder iterated locally and only committed the final test — fails Code Quality, even if the final Red was real. RFF abuse (frequent rewrites without proof, or rewrites that change what's being tested rather than how) drops Code Quality below threshold.
+
+The Reviewer verifies via `git log` that test commits precede impl commits per task. For at least one task per phase, the Reviewer checks out the final test commit and confirms it actually fails. Bundling test+impl drops Code Quality below threshold and fails the phase.
+
+Because all work happens on the harness branch, Red commits do not pollute the user's source branch. Do not bypass hooks with `--no-verify`. If a repo hook blocks a Red commit because the targeted test fails, record the Red proof in `phases/phase-N/red-proof-task-X.md` (same shape as form (b) above), then commit the test+impl together with a `TDD-HOOK-EXCEPTION:` footer naming the hook and proof file. The Reviewer treats this as acceptable only when the proof is complete and the final commit is green.
 
 ### 2. Mandatory end-to-end smoke against the deliverable
 
@@ -430,7 +456,20 @@ If a capability is missing, the Orchestrator tries workarounds before asking the
 - GitHub auth unavailable → complete local verification, commit artifacts, and return `partial` with exact push/PR retry commands and a draft PR body.
 - Tooling command unavailable → use the nearest project-equivalent command from README/package scripts. If no equivalent exists, mark that check `unavailable` in baseline and reviewers must not treat it as pass/fail.
 
+**Dev-server hygiene between framework-config phases.** If a phase touches build-pipeline or framework-config files (content schemas, plugin lists, build outputs, route generation), the runtime's HMR may not reload through the change. Symptom: Reviewer's E2E smoke shows stale or 500-ing pages while the production build is correct. Workaround: between such phases, the Orchestrator restarts the runtime cleanly (`pkill -f <runtime> && rm -rf .cache && <restart-command>` or equivalent for the project). Add the framework-config files the project considers HMR-fragile to RUN.md "Operating notes" so the Builder of any phase touching them gets a heads-up in the prompt.
+
 Do not pause for preference questions. Only return `blocked` when the next action truly requires a human credential, policy decision, external service, or contradictory spec resolution.
+
+### 9. Push/PR autonomy boundary
+
+Final delivery via `git push -u origin <harness>` + `gh pr create` is the default. **Carve-out for ephemeral/eval runs.** Before pushing, the Orchestrator checks for any of:
+
+- Working tree is in a `/tmp` or scratch path
+- Harness branch is on an orphan branch with no upstream commit history shared with origin
+- The source branch has no `origin` remote, or the remote points at a fork the user did not specify as the PR target
+- RUN.md "Run Configuration" sets `mode: eval` (explicit override)
+
+If any of these holds, return `partial` with the exact `git push -u origin <harness>` and `gh pr create --base <source> --head <harness> ...` commands and the PR body draft, instead of pushing. This is a documented exception to "no human pauses" — push to a public destination is irreversible (deleting a PR leaves audit trace) and warrants confirmation when the destination signals are weak. For real feature runs targeting a real source branch on origin, push and PR creation proceed autonomously as part of final verification (see §Final verification step 6).
 
 ---
 

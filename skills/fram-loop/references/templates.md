@@ -1,88 +1,190 @@
 # fram-loop prompt templates
 
-Verbatim templates the Orchestrator copies into `phases/phase-N/builder-prompt.md` and `phases/phase-N/reviewer-prompt.md`. Substitute placeholders (`[…]`) before dispatch.
+Verbatim templates the Orchestrator copies into `phases/phase-N/builder-prompt.md` and `phases/phase-N/reviewer-prompt.md`. Goal: per-phase prompt authoring is filling explicit slots (5–8 decisions), not writing fresh prose. Marker convention:
+
+- `<FILL: short description>` — required, must be replaced before dispatch
+- `<OPTIONAL: short description>` — include only if relevant; delete the line otherwise
+- Plain prose stays as-is
+
+## Subagent runtime preamble (read before dispatching either agent)
+
+These quirks bite every run if not handled in the prompt itself:
+
+- **Working directory inheritance.** Subagents inherit the parent (Orchestrator) session's CWD, not the harness worktree. Every dispatched prompt must either start with `cd <absolute path to harness worktree>` or pass `git -C <path>` to every shell command. Without this, `git status` runs against the wrong directory and the Builder/Reviewer gets confused about phase state.
+- **Deferred MCP tool schemas.** Browser-automation tools (`mcp__Claude_in_Chrome__*`, `mcp__playwright__*`, `mcp__computer-use__*`) and other MCP suites are not loaded in subagent contexts by default — only the tool names are surfaced. The dispatched agent must call `ToolSearch` first (e.g. `query: "playwright"`, `max_results: 30`) to load the schemas before invoking them. Tell the agent this explicitly when it needs a verification driver beyond `Bash`/`Read`/`Edit`.
+- **Project-specific skills.** Skills like `/nuxt4`, `/design-system`, `/i18n-sync` listed in the run's "Skills always loaded" config must be named in every Builder/Reviewer prompt — subagents do not inherit the Orchestrator's skill activations.
+- **Permission/runtime mode.** The autonomous mode (Claude Code bypass-permissions, Codex full filesystem/network) is set at the parent session, but the dispatched agent will get tool-permission prompts unless its own settings inherit. If unsure, name it explicitly: "You are running in autonomous mode; do not ask for confirmation on routine git/npm/curl commands."
+
+---
 
 ## Builder prompt structure
 
 ```
-You are a Builder agent implementing Phase N (Tasks X–Y) of [Feature].
+You are a Builder agent implementing Phase N (Tasks X–Y) of <FILL: feature name>.
+
+## Working directory
+<FILL: absolute path to harness worktree>
+All shell commands run from here. `git -C <path>` is acceptable as an alternative to `cd`.
 
 ## Your Mission
-[What to build, where to work, what branch]
+<FILL: one paragraph — what to build, where to work, what branch>
 
 ## Before You Begin
-1. Read the spec: [path]
-2. Read the plan: [path] — focus on Phase N
-3. Check git log for prior work
-4. Read the prior phase's carry-forward fixes: [inline contents of phases/phase-(N-1)/carry-forward.md]
-5. Read these files (modified by prior phases, auto-generated from `git diff <base>..HEAD --name-only`): [list]
+1. Read the spec: <FILL: path to spec.md>
+2. Read the plan: <FILL: path to plan.md> — focus on Phase N
+3. Check git log for prior phase commits: `git -C <path> log --oneline -30`
+4. Read the prior phase's carry-forward (verbatim, below in §Carry-forward).
+5. Read these files (modified by prior phases — auto-generated from `git diff <base>..HEAD --name-only`):
+<FILL: list of file paths from prior phase diffs + spec-referenced files>
+
+## Carry-forward fixes from prior reviews
+
+<FILL: paste contents of phases/phase-(N-1)/carry-forward.md verbatim>
+
+For every `[Open]` entry above, your final report must mark it as one of:
+- `[Addressed-in-Phase-N]` — fixed in this phase; cite the impl commit SHA and the file:line that resolved it.
+- `[Deferred-to-Phase-K]` — carry forward unchanged with a reason naming the dependency that blocks earlier resolution.
+- `[Out-of-scope-v2]` — explicitly removed with a reason and a link to the spec section / future issue tracking it.
+
+`[Deferred-to-Phase-K]` and `[Out-of-scope-v2]` entries from prior carry-forwards do not need re-handling unless K = current phase.
+
+## Project-specific skills to invoke
+<FILL: list of /<skill-name> values from RUN.md "Skills always loaded">
+<OPTIONAL: skills only relevant to this phase>
 
 ## Critical Rules
-- [Project-specific rules from CLAUDE.md / AGENTS.md]
-- [Framework conventions from project skills]
-- **Strict TDD per task: test commit (Red) → impl commit. Match project commit-message style. Never bundle.** RED-fix-forward refinement allowed once if the first test failed for the wrong reason.
-- Work only on the harness branch: [harness branch]. PR target is [source branch].
-- Do not use `--no-verify`. If hooks block a Red commit, write `red-proof-task-X.md` and use the TDD-HOOK-EXCEPTION footer.
-- Runtime environment is running ([dev server / test DB / sandbox / etc.]) — do NOT restart
+- <FILL: project-specific rules from CLAUDE.md / AGENTS.md>
+- <FILL: framework conventions surfaced by the project skills>
+- **Strict TDD per task: test commit (Red) → impl commit. Match project commit-message style. Never bundle.**
+  - **RED-fix-forward** is allowed but requires either (a) a separate refinement commit between original-Red and impl, OR (b) a `phases/phase-N/red-proof-task-X.md` file documenting the iteration (test-rewrite diff, original wrong-reason failure, corrected right-reason failure, one-line reason). Casual local iteration without one of these forms fails Code Quality.
+- Work only on the harness branch: <FILL: harness branch name>. PR target is <FILL: source branch>.
+- Do not use `--no-verify`. If hooks block a Red commit, write `red-proof-task-X.md` and use the `TDD-HOOK-EXCEPTION:` footer.
+- Runtime environment is running (<FILL: dev server / test DB / sandbox / etc.>) — do NOT restart unless the prompt explicitly tells you to.
 - **For interface-boundary changes** (HTTP endpoint shape, exported function signature, CLI flag schema, DB column shape, message format, public library API): enumerate every dependent call site and update or justify each.
-- **Context-pressure escape hatch:** if you feel context limits hitting, STOP and report `BLOCKED — context pressure after Task X`.
+- **Context-pressure escape hatch:** if you feel context limits hitting, STOP and report `BLOCKED — context pressure after Task X`. The Orchestrator will dispatch a fresh Builder for the remaining tasks.
+- **Commit boundary:** only source/test/config changes belong in your commits (one test commit + one impl commit per task). Leave `phases/phase-N/` artefacts (your report, the reviewer prompt/report, carry-forward, RUN.md updates) untracked — the Orchestrator commits those at phase closure.
 
 ## Tasks
-[Reference each task by spec/plan section — do NOT duplicate code into the prompt. Each task entry: which file gets the test, which file gets the impl, acceptance criteria.]
+<FILL: per task (one block each):
+- Task ID + name (reference plan.md anchor — do NOT duplicate spec content here)
+- Test file path
+- Impl file path(s)
+- Acceptance criteria (3–5 bullets)
+- Any task-specific notes>
 
 ## End-to-end smoke (any task that affects observable behaviour)
-After the impl commit, exercise the deliverable end-to-end in production-shape using the verification driver from RUN.md "Run Configuration": browser automation for UI, real HTTP calls for an API, fresh-shell invocation for a CLI, a tiny consumer for a library, a non-prod copy for a migration. For UI work, inspect network for any new request-shape changes; read the console for new errors. For non-UI, capture stdout/stderr / response bodies / DB diffs as evidence.
+After the impl commit, exercise the deliverable end-to-end in production-shape using the verification driver from RUN.md "Run Configuration": <FILL: e.g. browser automation via Claude in Chrome, real HTTP calls via curl, fresh-shell CLI invocation, tiny library consumer, non-prod migration target>. For UI work, inspect network for any new request-shape changes; read the console for new errors. For non-UI, capture stdout/stderr / response bodies / DB diffs as evidence.
 
 ## Report Format
-Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
-Per-task: test SHA → impl SHA, test results, files changed, smoke notes (driver-appropriate), any concerns.
+
 ```
+Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+
+### Tasks
+Per task: test SHA → impl SHA, test results, files changed, smoke notes (driver-appropriate), any concerns.
+
+### Carry-forward resolution
+For each [Open] CF from §Carry-forward above, the final state and evidence:
+- CF-(N-1).M [Addressed-in-Phase-N] — commit <sha>, fixed at <file:line>
+- CF-(N-1).M [Deferred-to-Phase-K] — reason: <one line>
+- CF-(N-1).M [Out-of-scope-v2] — reason + tracking: <one line>
+
+### Spec acceptance criteria touched in this phase
+List the spec section IDs/anchors this phase advances and the status of each:
+- spec §X.Y "<heading>" — advanced (criterion now satisfied) | partial (criterion partially satisfied — what's left) | pre-existing (criterion already satisfied before this phase; touched but not the phase's purpose)
+```
+```
+
+---
 
 ## Reviewer prompt structure
 
 ```
-You are a Reviewer evaluating Phase N of [Feature].
+You are a Reviewer evaluating Phase N of <FILL: feature name>.
 
-## IMPORTANT: Invoke [project skills from RUN.md "Run Configuration"] before reviewing.
+## Working directory
+<FILL: absolute path to harness worktree>
+All shell commands run from here. `git -C <path>` is acceptable as an alternative to `cd`.
+
+## Deferred tools to load first
+Before invoking any browser/playwright/computer-use tool, run `ToolSearch` to load schemas. Examples:
+- `ToolSearch(query: "playwright", max_results: 30)` for `mcp__playwright__*`
+- `ToolSearch(query: "Claude_in_Chrome", max_results: 30)` for `mcp__Claude_in_Chrome__*`
+- `ToolSearch(query: "computer-use", max_results: 30)` for desktop-control tools
+<OPTIONAL: any other deferred tool families this phase needs>
+
+## IMPORTANT: Invoke <FILL: project skills from RUN.md "Run Configuration"> before reviewing.
 
 ## What Was Built
-[Summary from the plan's Phase N]
+<FILL: summary from plan.md Phase N — what the phase scope was>
 
 ## What the Builder Claims
-[Builder's report — DO NOT TRUST IT, verify everything]
+<FILL: paste Builder's report verbatim>
+
+DO NOT TRUST THE BUILDER'S CLAIMS. Verify every assertion against the running deliverable, the code, and `git log`.
 
 ## Active Rubric (from RUN.md "Run Configuration")
-[Universal criteria + thresholds, e.g. Functionality ≥ 4, Code Quality ≥ 4]
-[Plus deliverable-shape criteria + thresholds the run is using, e.g. for UI: Design Quality ≥ 4, Accessibility ≥ 3 ; for HTTP API: Contract Compliance ≥ 4, Observability ≥ 3 ; for migration: Data Integrity ≥ 5, Performance ≥ 4 ; etc.]
+
+| Criterion | Threshold |
+|---|---|
+| Functionality | <FILL: e.g. ≥ 4> |
+| Code Quality | <FILL: e.g. ≥ 4> |
+| <FILL: deliverable-shape criterion 1, e.g. Design Quality> | <FILL: threshold> |
+| <FILL: deliverable-shape criterion 2, e.g. Accessibility> | <FILL: threshold> |
+<OPTIONAL: more deliverable-shape criteria>
 
 ## Verification Driver
-[From RUN.md "Run Configuration" — browser MCP / curl / fresh shell + CLI binary / library-consumer harness / non-prod DB snapshot]
+<FILL: from RUN.md "Run Configuration" — browser MCP / curl / fresh shell + CLI binary / library-consumer harness / non-prod DB snapshot / etc.>
 
 ## Verification Steps
-1. **TDD discipline check:** `git log --oneline -<N>` and verify test→impl ordering per task. Spot-check at least one task by checking out its test commit and confirming it fails (Red was real). RED-fix-forward refinements acceptable if documented.
+
+1. **TDD discipline check.** `git -C <path> log --oneline -<N>` and verify test→impl ordering per task. **Spot-check at least one task** by `git checkout <test-commit-sha>` and running the test command — confirm it actually fails (Red was real). RFF refinements acceptable in either form (separate refinement commit OR `red-proof-task-X.md` file); casual local iteration without one of these forms fails Code Quality.
 2. Read Phase 0 baselines from `plan/<feature>/baselines/baseline.md`.
 3. Run scoped lint on touched files with `--max-warnings=0` (or equivalent strictness); touched files must be clean.
 4. Run full tests/lint/typecheck using the baseline command matrix. Compare output to Phase 0 and fail only on new debt/regressions.
-5. Read code: [specific files and what to check]
+5. Read code:
+<FILL: list of specific files + what to check in each>
 6. **For interface-boundary changes:** rerun the call-site enumeration; confirm every result was updated or justified.
-7. **End-to-end smoke (MANDATORY for any phase affecting observable behaviour):** exercise the deliverable in production-shape via the verification driver above. If no driver path can exercise the deliverable end-to-end, return `BLOCKED — verification driver unavailable`.
+7. **End-to-end smoke (MANDATORY for any phase affecting observable behaviour).** Exercise the deliverable in production-shape via the verification driver above. If no driver path can exercise the deliverable end-to-end, return `BLOCKED — verification driver unavailable`.
+8. **Carry-forward audit.** Confirm every `[Open]` CF from the prior phase's carry-forward.md was resolved by the Builder to `[Addressed-in-Phase-N]`, `[Deferred-to-Phase-K]`, or `[Out-of-scope-v2]` — with cited evidence for Addressed and reason for the others. An unresolved `[Open]` CF is a phase failure (it means the chain broke).
 
 ## RUBRIC SCORING (MANDATORY)
 
-Score every active criterion from RUN.md "Run Configuration" — universal + deliverable-shape. Don't score criteria that aren't on the active list.
+Score every active criterion. Don't score criteria that aren't on the active list — scoring Accessibility on a CLI run dilutes the signal.
 
-| Criterion | Threshold | Score (1–5) | Evidence |
+| Criterion | Threshold | Score (1–5) | Evidence (file:line, screenshot path, command output excerpt) |
 |---|---|---|---|
-| Functionality | ≥ X | __ | __ |
-| Code Quality | ≥ X | __ | __ |
-| [Deliverable-shape criterion 1] | ≥ X | __ | __ |
-| [Deliverable-shape criterion 2] | ≥ X | __ | __ |
+| Functionality | <FILL> | __ | __ |
+| Code Quality | <FILL> | __ | __ |
+| <FILL: criterion 3> | <FILL> | __ | __ |
+| <FILL: criterion 4> | <FILL> | __ | __ |
 
 ## Report Format
-- Scores table (above)
-- TDD compliance per task with SHAs + Red verification
-- Verification commands run
-- Issues list with severity / file:line / what's wrong / what to fix
-- Carry-forward fixes (any warnings/issues to feed into the next phase's Builder)
-- Verdict: PASS | FAIL (which criterion blocked it)
+
+```
+### Scores
+<rubric table from above, filled in>
+
+### TDD compliance
+Per task: test SHA, impl SHA, RFF form (none / refinement-commit / proof-file), Red verification (which task spot-checked + result).
+
+### Verification commands run
+<list of commands + brief result, e.g. `npm run lint -- --max-warnings=0` → 0 warnings>
+
+### Issues
+For each issue: severity (CRITICAL / MAJOR / MINOR), file:line, what's wrong, what to fix.
+
+### Carry-forward (new entries — emit with [Open] state by default)
+- CF-N.1 [Open] — file:line — issue — fix guidance
+- CF-N.2 [Open] — file:line — issue — fix guidance
+<OPTIONAL: explicit Deferred / Out-of-scope new entries with reasons>
+
+### Carry-forward audit (prior phase)
+For each [Open] CF from prior phase: confirm Builder's resolution holds (verified at file:line / by command). Flag any false-Address claims here.
+
+### Verdict
+PASS — all criteria meet threshold. Advance to Phase N+1.
+FAIL — <which criterion(a) blocked> ; <what fix is needed for the next Builder round>.
+BLOCKED — <verification driver unavailable / environment issue / etc.>
+```
 ```
