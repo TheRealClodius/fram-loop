@@ -1,12 +1,13 @@
 ---
 name: fram-loop
 description: >
-  Two-agent autonomous loop (Builder + Reviewer) for shipping a complete user-facing
-  feature end-to-end across multiple phases without mid-run human input. Output is a
-  finished feature on an isolated harness branch with a PR opened back to the source
-  branch. Use only when the user EXPLICITLY opts in ("use the fram-loop", "run the
-  fram-loop", "spin up the fram-loop", "run this through the fram-loop"). NEVER
-  auto-invoke.
+  Two-agent autonomous loop (Builder + Reviewer) for shipping any long-running
+  coding deliverable end-to-end across multiple phases without mid-run human input —
+  features, refactors, migrations, library design, perf, large cleanups. Output is a
+  finished deliverable on an isolated harness branch with a PR opened back to the
+  source branch. Use only when the user EXPLICITLY opts in ("use the fram-loop",
+  "run the fram-loop", "spin up the fram-loop", "run this through the fram-loop").
+  NEVER auto-invoke.
 license: MIT
 compatibility: >
   Requires parallel sub-agent dispatch, git, gh CLI for PR creation, autonomous-
@@ -211,7 +212,7 @@ Each phase is a Builder→Reviewer round-trip on disk:
 5. **Orchestrator** writes `reviewer-report.md`, updates the Phase Status table.
 6. All criteria ≥ threshold → write `carry-forward.md`, advance to Phase N+1. Any fails → write `fix-rounds/round-K-builder.md`, dispatch fix-Builder. Truly stuck → BLOCKED.
 
-After the last phase passes, the orchestrator runs final verification (spec re-walk, end-to-end user-flow exercise, security check, full suite/lint/typecheck against baseline, push, PR creation) before declaring `complete`.
+After the last phase passes, the orchestrator runs final verification (spec re-walk, end-to-end exercise of the deliverable, security check, full suite/lint/typecheck against baseline, push, PR creation) before declaring `complete`.
 
 ### Roles
 
@@ -299,12 +300,12 @@ The Reviewer must:
 
 After the last per-phase review passes, before the loop declares `complete`:
 
-1. **Re-read the spec.** Walk the spec section by section, not the plan. Confirm every requirement, acceptance criterion, and user-facing behaviour is delivered. The plan is implementation; the spec is what the user actually wanted.
+1. **Re-read the spec.** Walk the spec section by section, not the plan. Confirm every requirement, acceptance criterion, and spec-defined behaviour is delivered. The plan is implementation; the spec is what the user actually wanted.
 2. **End-to-end exercise of the deliverable.** Drive it as it will actually be used: a UI feature in the browser as a real user, an API via real HTTP calls against the running service, a CLI from a fresh shell, a library via a tiny consumer importing the public API, a migration on a non-prod copy with rollback verified. No back-doors, no test fixtures that bypass the real surface. If it can't be used in production-shape, it is not done.
 3. **Run a project-appropriate security check.** This may be a security-focused subagent (e.g., `security-nuxt` if the project has it), a static analyser, a CI security job, or a manual checklist depending on what the project supports. If nothing is available, run a basic OWASP-shaped self-check (auth, input validation, SSRF, XSS, secrets in committed files).
 4. **Run the full test suite, full lint, full typecheck** across the entire feature surface (not just per-phase affected files). Compare to Phase 0 baselines; any new debt blocks completion. A regression in Phase 2 caused by a Phase 5 edit should be caught here.
 5. **Commit final run artifacts** — `RUN.md` state, phase reports, carry-forward files, baseline notes, final verification notes.
-6. **Push the harness branch and open a PR** back to the source branch. The PR body must include: spec path, plan path, final verification summary, browser walkthrough notes, baseline comparison summary, known residual risks, and exact commands a reviewer should run before merge.
+6. **Push the harness branch and open a PR** back to the source branch. The PR body must include: spec path, plan path, final verification summary, end-to-end smoke walkthrough notes (driver-appropriate), baseline comparison summary, known residual risks, and exact commands a reviewer should run before merge.
 
 All six must pass before `phaseStatus: complete`. If verification fails, dispatch a fix-Builder scoped to the specific gap and re-verify. If push or PR creation fails after the feature is locally verified, return `partial` with the exact branch name, target branch, local commit SHA, PR title/body draft, and the commands to retry (`git push -u origin <harness_branch>` and `gh pr create --base <source_branch> --head <harness_branch> ...`). Do not call the feature `complete` until the PR exists.
 
