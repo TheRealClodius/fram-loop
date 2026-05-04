@@ -1,8 +1,8 @@
 # fram-loop
 
-A two-agent autonomous development pattern for shipping a complete user-facing feature end-to-end without human intervention mid-run. A **Builder** agent implements each phase with a fresh context; a **Reviewer** agent scores against a rubric and runs browser-level E2E. Phase-based context resets prevent the model from trying to wrap up early as context fills.
+A two-agent autonomous development pattern for shipping any long-running coding deliverable end-to-end without human intervention mid-run — features, refactors, migrations, library design, perf projects, large cleanups. A **Builder** agent implements each phase with a fresh context; a **Reviewer** agent scores against a rubric and exercises the deliverable end-to-end (browser for UI; HTTP / CLI / DB / library invocation for non-UI). Phase-based context resets prevent the model from trying to wrap up early as context fills.
 
-**Output is a finished feature a real user can use, on an isolated harness branch with a PR opened back to the source branch.**
+**Output is a finished deliverable working in production-shape, on an isolated harness branch with a PR opened back to the source branch.**
 
 ## Install
 
@@ -27,17 +27,17 @@ Prerequisites: a reviewed spec and a harness-shaped plan (2–4 tasks per phase,
 
 1. The orchestrator creates `fram/<source-leaf>-<feature-slug>-<source-sha>` from the current branch tip and targets the final PR back to that source branch.
 2. Per-feature directory `plan/<feature>/` holds `spec.md`, `plan.md`, baseline outputs, a live `RUN.md` (state machine + Phase Status table), and `phases/phase-N/` files (every prompt sent + report received).
-3. For each phase: orchestrator dispatches a fresh Builder, then a Reviewer. Reviewer scores Functionality / Design Quality / Accessibility / Code Quality on 1–5 with file:line evidence.
+3. For each phase: orchestrator dispatches a fresh Builder, then a Reviewer. Reviewer scores 1–5 with file:line evidence on two universal criteria (Functionality, Code Quality) plus deliverable-shape criteria the run picks (e.g. Design Quality + Accessibility for UI; Contract Compliance + Observability for an HTTP API; Data Integrity + Performance for a migration).
 4. Pass → next phase. Fail → fix-Builder + re-review until done. The loop never halts on transient friction; it adapts (re-interpret spec, narrow scope, insert recovery phase) and freight-trains to `complete`, `partial`, or `blocked`.
-5. Final verification gate: spec re-walk + end-to-end user-flow exercise + project-appropriate security check + full suite/lint/typecheck against the Phase 0 baseline + push/PR creation.
+5. Final verification gate: spec re-walk + end-to-end exercise of the deliverable in production-shape + project-appropriate security check + full suite/lint/typecheck against the Phase 0 baseline + push/PR creation.
 
 ## Defaults baked in
 
 - **Strict TDD** per task (test commit Red → impl commit; never bundled). RED-fix-forward refinement allowed once.
 - **Harness branch from the start** so Red commits and recovery work never land on the user's source branch.
 - **Phase 0 lint/test/typecheck baseline** so reviewers fail only on new debt, not known repo debt.
-- **Mandatory browser smoke** for any UI-touching phase via Claude in Chrome MCP, Playwright MCP, or equivalent.
-- **Call-site enumeration** when changing a server contract.
+- **Mandatory end-to-end smoke** in production-shape for any phase that affects observable behaviour — browser MCP for UI; HTTP / CLI / library-consumer / non-prod DB invocation for non-UI.
+- **Call-site enumeration** when changing any interface boundary (HTTP shape, function signature, CLI flags, schema, library API).
 - **Model routing** (provider-agnostic): best model for Reviewer always; cheap-out OK on mechanical Builder work; commit-agent for recovery.
 - **PR handoff** when complete; if GitHub auth/network fails after local verification, the loop returns `partial` with exact retry commands and a PR body draft.
 - **Resilience over rigidity** — adapt, don't halt.
