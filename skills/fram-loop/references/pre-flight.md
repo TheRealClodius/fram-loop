@@ -15,10 +15,10 @@ Read once before kickoff. The Setup steps below are *operator setup* (run them o
 - [ ] Source branch + source SHA resolved
 - [ ] Harness branch created from source branch tip (`fram/<source-leaf>-<feature-slug>-<source-sha>`)
 - [ ] PR target recorded as the source branch
-- [ ] Plan dir created at `plan/<feature>/` with `spec.md` + `plan.md`
+- [ ] Plan dir created at `fram-loop/<feature>/` with `spec.md` + `plan.md`
 - [ ] `RUN.md` scaffolded with all required sections (header, layout block, Run Configuration with rubric thresholds + model routing + project skills scanned from CLAUDE.md/AGENTS.md + verification host allowlist + Reviewer subagent path + known test failures, TDD discipline, resume guide, state machine, dispatch templates, empty Phase Status table, operating notes)
-- [ ] **`plan/<feature>/RUN-Phase-0.snapshot.md` written** — immutable copy of the Run Configuration block (anchor for the §Final verification step 6 base/head check)
-- [ ] Phase 0 baselines captured in `plan/<feature>/baselines/` for lint, tests, and typecheck (or explicitly marked unavailable)
+- [ ] **`fram-loop/<feature>/RUN-Phase-0.snapshot.md` written** — immutable copy of the Run Configuration block (anchor for the §Final verification step 6 base/head check)
+- [ ] Phase 0 baselines captured in `fram-loop/<feature>/baselines/` for lint, tests, and typecheck (or explicitly marked unavailable)
 - [ ] Permissions configured (`Bash(*)`, browser MCP tools, etc.)
 - [ ] Agent mode set to autonomous operation (`bypassPermissions` or equivalent)
 - [ ] Dev server running (do not restart it)

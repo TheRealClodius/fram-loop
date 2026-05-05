@@ -9,7 +9,7 @@ The skill's §Run state section in SKILL.md carries the load-bearing summary (ev
 ## Standard plan-dir layout
 
 ```
-plan/<feature-name>/
+fram-loop/<feature-name>/
   RUN.md                              # live progress: Phase Status table, state machine, resume guide, run config
   RUN-Phase-0.snapshot.md             # immutable copy of Run Configuration at Phase 0 close (anchor for base/head check)
   spec.md                                # human-reviewed feature spec
@@ -92,8 +92,8 @@ Before dispatching Phase 1, the Orchestrator creates an isolated harness branch 
 1. Resolve `source_branch=$(git rev-parse --abbrev-ref HEAD)` and `source_sha=$(git rev-parse --short HEAD)`.
 2. Create `harness_branch=fram/<source-leaf>-<feature-slug>-<source-sha>` from that exact source tip. Sanitize slashes in the source leaf (`feature/foo` → `feature-foo`). If the branch exists locally or on origin for the same source SHA, reuse/resume it; if it exists for a different SHA, mint a new branch with the new SHA. Never force-push.
 3. Set the PR target to `source_branch` (not `main` unless the user explicitly started from `main` and project rules allow it).
-4. Capture baseline outputs in `plan/<feature>/baselines/` before any feature edits. Record command, exit code, timestamp, source branch, source SHA, and output path in `baseline.md`.
-5. **Snapshot the Run Configuration.** Once the RUN.md "Run Configuration" block is finalised (source/harness branches, PR target, rubric thresholds, model routing, host allowlist, frozen-install command), copy the entire block to `plan/<feature>/RUN-Phase-0.snapshot.md`. This file is **immutable** for the rest of the run — it is the comparison anchor for the final-verification base/head check (§Final verification step 6). Builders never edit it; the Orchestrator never overwrites it. If the run genuinely needs a configuration change mid-flight, that's an Orchestrator decision recorded in RUN.md "Operating notes" with a rationale, and the snapshot stays as the original intent of record.
+4. Capture baseline outputs in `fram-loop/<feature>/baselines/` before any feature edits. Record command, exit code, timestamp, source branch, source SHA, and output path in `baseline.md`.
+5. **Snapshot the Run Configuration.** Once the RUN.md "Run Configuration" block is finalised (source/harness branches, PR target, rubric thresholds, model routing, host allowlist, frozen-install command), copy the entire block to `fram-loop/<feature>/RUN-Phase-0.snapshot.md`. This file is **immutable** for the rest of the run — it is the comparison anchor for the final-verification base/head check (§Final verification step 6). Builders never edit it; the Orchestrator never overwrites it. If the run genuinely needs a configuration change mid-flight, that's an Orchestrator decision recorded in RUN.md "Operating notes" with a rationale, and the snapshot stays as the original intent of record.
 
 The branch is load-bearing: Red test commits, recovery commits, plan artifacts, and implementation commits all live on the harness branch. The user's source branch is left untouched. Final delivery is a PR from the harness branch back to the source branch.
 

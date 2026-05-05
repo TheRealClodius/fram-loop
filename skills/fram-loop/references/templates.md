@@ -185,7 +185,7 @@ DO NOT TRUST THE BUILDER'S CLAIMS. Verify every assertion against the running de
 ## Verification Steps
 
 1. **TDD discipline check.** `git -C <path> log --oneline -<N>` and verify test→impl ordering per task. **Spot-check at least one task** by `git checkout <test-commit-sha>` and running the test command — confirm it actually fails (Red was real). RFF refinements acceptable in either form (separate refinement commit OR `red-proof-task-X.md` file); casual local iteration without one of these forms fails Code Quality.
-2. Read Phase 0 baselines from `plan/<feature>/baselines/baseline.md`.
+2. Read Phase 0 baselines from `fram-loop/<feature>/baselines/baseline.md`.
 3. Run scoped lint on touched files with `--max-warnings=0` (or equivalent strictness); touched files must be clean.
 4. Run full tests/lint/typecheck using the baseline command matrix. Compare output to Phase 0 and fail only on new debt/regressions.
 5. Read code:

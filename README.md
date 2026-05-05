@@ -38,7 +38,7 @@ The skill internalises what it can; the rest is your environment.
 ## How it works (in 30 seconds)
 
 1. The orchestrator creates `fram/<source-leaf>-<feature-slug>-<source-sha>` from the current branch tip and targets the final PR back to that source branch.
-2. Per-feature directory `plan/<feature>/` holds `spec.md`, `plan.md`, baseline outputs, a live `RUN.md` (state machine + Phase Status table), and `phases/phase-N/` files (every prompt sent + report received).
+2. Per-feature directory `fram-loop/<feature>/` holds `spec.md`, `plan.md`, baseline outputs, a live `RUN.md` (state machine + Phase Status table), and `phases/phase-N/` files (every prompt sent + report received).
 3. For each phase: orchestrator dispatches a fresh Builder, then a Reviewer. Reviewer scores 1–5 with file:line evidence on two universal criteria (Functionality, Code Quality) plus deliverable-shape criteria the run picks (e.g. Design Quality + Accessibility for UI; Contract Compliance + Observability for an HTTP API; Data Integrity + Performance for a migration).
 4. Pass → next phase. Fail → fix-Builder + re-review until done. The loop never halts on transient friction; it adapts (re-interpret spec, narrow scope, insert recovery phase) and freight-trains to `complete`, `partial`, or `blocked`.
 5. Final verification gate: spec re-walk + end-to-end exercise of the deliverable in production-shape + project-appropriate security check + full suite/lint/typecheck against the Phase 0 baseline + push/PR creation.
