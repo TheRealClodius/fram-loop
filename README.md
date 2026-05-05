@@ -23,6 +23,18 @@ The skill is **opt-in only**. It does not auto-invoke. Trigger phrases:
 
 Prerequisites: a reviewed spec and a harness-shaped plan (2–4 tasks per phase, each phase independently testable end-to-end). The skill itself documents how to author both as preparation work if they don't exist. Run it in an autonomous environment: Claude Code with bypass/auto permissions, or Codex with full filesystem/network access and no approval interruptions for routine commands.
 
+## Run safely
+
+Autonomous mode + broad shell access is a real attack/blast surface. The skill self-enforces a runtime safety boundary (no global-config writes, no package publishes, no destructive `gh`, no secrets reads, network restraint — see [SKILL.md §Defaults #10–#12](skills/fram-loop/SKILL.md)) and ships a frozen-install default and prompt-injection awareness. Pair that with operator-side controls when you run it:
+
+- **Isolate the runtime.** Dedicated VM / CI runner / fresh clone, or at least a `git worktree` (the skill's Prerequisites recommend this). Non-production network where possible.
+- **Minimise secrets.** Dev/staging credentials only; short-lived tokens; no prod keys, no PII in the agent's environment. Optional: a secret-scanning hook that fails the run on a bad commit.
+- **Limit Git/GitHub power.** Least-privilege tokens; branch protection on the source branch (the loop assumes you can't merge unsupervised). The skill checks PR `--base`/`--head` against the recorded Run Configuration before pushing.
+- **Lock the verification surface.** Dedicated browser profile for the Reviewer's MCP — no SSO, no logged-in prod sessions. Smoke targets pinned to localhost; disposable / clearly-non-prod DBs with URLs supplied by the runner, not the repo.
+- **Harden supply chain.** Lockfile + frozen installs (skill default — §Defaults #11). Pinned runtimes. Stricter install flags only if the project still works under them.
+
+The skill internalises what it can; the rest is your environment.
+
 ## How it works (in 30 seconds)
 
 1. The orchestrator creates `fram/<source-leaf>-<feature-slug>-<source-sha>` from the current branch tip and targets the final PR back to that source branch.
