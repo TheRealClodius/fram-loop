@@ -104,6 +104,8 @@ Baseline comparison rule: Reviewers verify **no new debt**, not "the full repo b
 - Any new full-suite failure, new lint diagnostic, or new type diagnostic introduced by the harness branch fails Code Quality, even if the command already failed at baseline.
 - If a phase intentionally fixes baseline debt, update `baseline.md` with the new lower count and the commit that improved it. Never raise the baseline silently.
 
+**Bootstrap projects (no tooling at the source tip).** If the project doesn't have lint/test/typecheck wired yet (a Phase 1 task will wire them), record each command in `baseline.md` as `unconfigured — Phase N will wire`, with placeholder output files. The wiring phase's Reviewer treats absence as expected; once that phase passes, the Orchestrator overwrites the placeholders with the real outputs, and the comparison rules above apply from that phase forward.
+
 ---
 
 ## Phase Status table (in RUN.md)

@@ -28,6 +28,10 @@ The canonical installer is `gh skill install` (built into `gh ≥ 2.90`, shipped
 ### Cutting a release
 
 ```bash
+# 0. Bump the plugin manifest version to match the tag (marketplace users only
+#    receive updates when this bumps — see .claude-plugin/plugin.json "version")
+#    Then sanity-check: claude plugin validate .   (one known CLAUDE.md warning is expected)
+
 # 1. Commit your changes on main
 git add skills/
 git -c user.name="Andrei Clodius" -c user.email="andrei@fram.design" commit -m "feat: <change summary>"
@@ -44,7 +48,8 @@ gh release create v0.X.Y --title "v0.X.Y — <title>" --notes "<release notes>"
 
 # 5. Verify
 gh release list                                                      # v0.X.Y should be Latest
-gh skill install TheRealClodius/fram-loop fram-loop --dry-run        # should resolve to v0.X.Y
+gh skill preview TheRealClodius/fram-loop fram-loop                  # fetches from the latest Release — confirm content matches what you just tagged
+# (gh ≥ 2.92 removed `gh skill install --dry-run`; `gh skill preview` is the replacement)
 ```
 
 If you forget step 4, `gh skill install` will keep resolving to whatever was the last Release. Symptom: install users report missing files or stale conventions.

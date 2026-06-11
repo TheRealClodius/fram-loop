@@ -52,7 +52,7 @@ Record the probe result in RUN.md "Operating notes" so reviewers (human and agen
 
 **Why.** Most "stuck" rounds are misframed — bad task split, ambiguous spec, wrong rubric threshold for the surface, mid-run dependency conflict. All cheap to fix once recognised. A fixed cap halts the loop *before* recognition happens. The bet is that good carry-forward + good rubric + adaptive replanning give the loop enough self-awareness to know when it's stuck.
 
-**What to watch for.** There is no upper bound on time or tokens. A pathological case — an ambiguous spec the agents can't resolve, a recurring environment failure that adaptation can't fix — could spend uncapped resources. Run #1 used ~1.4M tokens across ~5 hours wall-clock for a benign run; a pathological run could be longer. The skill doesn't surface this cost to users in the trigger description; consider setting expectations explicitly when invoking on a real project.
+**What to watch for.** There is no upper bound on time or tokens. A pathological case — an ambiguous spec the agents can't resolve, a recurring environment failure that adaptation can't fix — could spend uncapped resources. Run #1 used ~2.1M tokens across ~5 hours wall-clock for a benign run; a pathological run could be longer. The skill doesn't surface this cost to users in the trigger description; consider setting expectations explicitly when invoking on a real project.
 
 ---
 

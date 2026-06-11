@@ -5,16 +5,25 @@ description: >
   coding deliverable end-to-end across multiple phases without mid-run human input —
   features, refactors, migrations, library design, perf, large cleanups. Output is a
   finished deliverable on an isolated harness branch with a PR opened back to the
-  source branch. Use only when the user EXPLICITLY opts in ("use the fram-loop",
-  "run the fram-loop", "spin up the fram-loop", "run this through the fram-loop").
-  NEVER auto-invoke.
+  source branch. Starting a run requires the user's explicit go-ahead, but any
+  clear request to run the loop counts — "use/run/spin up the fram-loop",
+  "fram-loop this", "kick off the loop", or similar; exact phrasing doesn't
+  matter. If a task fits the shape (multi-phase deliverable, spec + plan
+  available) and the user hasn't asked, SUGGEST this skill and ask — but never
+  start a run without the user's yes: a run is hours-long, token-heavy, and
+  autonomous end-to-end.
 license: MIT
+metadata:
+  author: Andrei Clodius (fram.design)
+  author-linkedin: https://www.linkedin.com/in/andrei-clodius-41568654/
+  author-github: https://github.com/TheRealClodius
+  homepage: https://github.com/TheRealClodius/fram-loop
 compatibility: >
-  Requires parallel sub-agent dispatch, git, gh CLI for PR creation, autonomous-
+  Requires parallel sub-agent dispatch, git, gh CLI for PR creation, autonomous
   execution mode (Claude Code bypassPermissions or Codex full filesystem/network
   access), and a verification driver appropriate to the deliverable (browser
-  automation MCP for UI; HTTP client / CLI shell / test database / library-
-  consumer harness for non-UI work). The runtime needed to exercise the
+  automation MCP for UI; HTTP client / CLI shell / test database /
+  library-consumer harness for non-UI work). The runtime needed to exercise the
   deliverable end-to-end (dev server, test DB, fresh shell, etc.) must be
   available before dispatch.
 allowed-tools: Bash(git:*) Bash(gh:*) Bash(npm:*) Bash(npx:*) Bash(pnpm:*) Bash(yarn:*) Bash(bun:*) Bash(ps:*) Bash(lsof:*) Bash(curl:*) Read Write Edit Glob Grep Agent TodoWrite
@@ -37,15 +46,17 @@ This means:
 
 ## When to use this skill
 
-- The user explicitly opts in
+- The user has given an explicit go-ahead — any clear request to run the loop counts ("use/run/spin up the fram-loop", "fram-loop this", "kick off the loop", or similar); exact phrasing doesn't matter
 - The work is a multi-phase deliverable (3+ phases is the sweet spot, 5+ shows clear value) — feature, refactor, migration, library design, perf project, large cleanup
 - A spec exists, and a plan exists or you're prepared to author/reshape one before kickoff (see Prerequisites for the harness-shape constraints the plan must satisfy)
 - Each phase produces something independently testable end-to-end
 
+If the work fits these criteria but the user hasn't asked for the loop, suggest it — name the cost (hours of wall-clock, millions of tokens, autonomous to an opened PR) — and wait for the yes.
+
 ## When NOT to use
 
 - Single-phase or single-task work — orchestration overhead isn't worth it
-- The user hasn't explicitly opted in
+- The user hasn't said yes yet — suggesting the loop is encouraged; starting it isn't
 - The plan doesn't have clear phase boundaries — fix the plan first
 - The user wants per-phase review checkpoints — that's a different mode; this one freight-trains
 
@@ -113,7 +124,7 @@ After the last phase passes, the orchestrator runs final verification (spec re-w
 ### Roles
 
 - **Builder** — implements code. Full edit access. Receives spec, plan section, git history, prior carry-forward, and (on fix rounds) reviewer feedback. **Never self-evaluates.** Builders need broad write access for source/test/config edits but only need `Bash(gh:*)` during final verification (PR creation). Where the harness supports per-dispatch tool narrowing, Orchestrators SHOULD restrict mid-phase Builder dispatches to git/npm/test/lint/typecheck/curl + Read/Write/Edit/Glob/Grep, and re-broaden only for the final-verification PR-creation step. See [references/templates.md](references/templates.md) §"Dispatching with narrowed tools" for the mechanism.
-- **Reviewer** — evaluates the running deliverable + code quality. Read-only code access + verification tools (browser automation for UI; HTTP / CLI / DB / library-consumer invocation for non-UI). Scores against the rubric. **Never implements.** Reviewer dispatches receive a tighter `allowed-tools` than Builder dispatches — no `Write`, no `Edit`, no `Bash(npm:*) Bash(npx:*) Bash(gh:*)`. Reviewers verify via Read / Glob / Grep / `git log` / `Bash(curl:*)` (HTTP smoke) / the verification-driver MCP, plus narrow project-specific test/lint/typecheck invocations slotted into the Reviewer prompt (e.g. `Bash(npx vitest:*) Bash(npx eslint:*) Bash(npx tsc:*)` rather than full `Bash(npm:*)`/`Bash(npx:*)`). Read-only by tooling, not just by doctrine.
+- **Reviewer** — evaluates the running deliverable + code quality. Read-only code access + verification tools (browser automation for UI; HTTP / CLI / DB / library-consumer invocation for non-UI). Scores against the rubric. **Never implements.** Reviewer dispatches receive a tighter `allowed-tools` than Builder dispatches — no `Write`, no `Edit`, no `Bash(npm:*) Bash(npx:*) Bash(gh:*)`. Reviewers verify via Read / Glob / Grep / `git log` / `Bash(curl:*)` (HTTP smoke) / the verification-driver MCP, plus narrow project-specific test/lint/typecheck invocations slotted into the Reviewer prompt (e.g. `Bash(npx vitest:*) Bash(npx eslint:*) Bash(npx tsc:*)` rather than full `Bash(npm:*)`/`Bash(npx:*)`). Read-only by tooling where the harness enforces dispatch-time narrowing — probe-test it (see [references/templates.md](references/templates.md) §"Dispatching with narrowed tools") — and by doctrine elsewhere.
 - **Orchestrator** — the parent conversation. Writes per-phase prompts/reports/carry-forward to disk, updates the RUN.md Phase Status table, dispatches agents. Never restarts an agent's work itself; never pauses to ask the human for opinions.
 
 **Commit boundary.** Builders commit only source/test/config changes per the per-task TDD pattern (one test commit + one impl commit per task). The Orchestrator commits the run-state artefacts (`builder-report.md`, `reviewer-prompt.md`, `reviewer-report.md`, `carry-forward.md`, RUN.md state-table updates, baseline refreshes) as a single phase-closure commit after the Reviewer passes. This keeps the Builder's commit graph a clean record of feature work, and the Orchestrator's a clean record of process.
@@ -297,14 +308,14 @@ When unsure: dispatch a fresh Reviewer. Default is delegation; pickup is the exc
 
 ### 5. Model routing defaults
 
-The loop is provider-agnostic. Defaults below; override in the RUN.md "Run Configuration" block.
+The loop is provider-agnostic, and concrete model names rot — route by tier, then record the actual model IDs for the run in the RUN.md "Run Configuration" block.
 
-| Role | Anthropic default | OpenAI Codex default | Notes |
+| Role | Tier | Examples (as of 2026-06) | Work shape |
 |---|---|---|---|
-| Builder (capability work) | claude-opus-4-7 | gpt-5.5 (fallback gpt-5.4) | Complex application logic, contract design, architecture decisions |
-| Builder (mechanical) | claude-sonnet-4-6 | gpt-5.4-mini | Renames, dead-code removal, mechanical sweeps |
-| **Reviewer (always)** | **claude-opus-4-7** | **gpt-5.5 (fallback gpt-5.4)** | Bad review = wasted fix round; never cheap-out |
-| Commit agent (recovery) | claude-haiku-4-5 | gpt-5.4-mini | Mechanical commit-only work |
+| Builder (capability work) | Strongest available coding model | claude-fable-5 / claude-opus-4-8, gpt-5.5 | Complex application logic, contract design, architecture decisions |
+| Builder (mechanical) | Mid-tier fast model | claude-sonnet-4-6, gpt-5.4-mini | Renames, dead-code removal, mechanical sweeps |
+| **Reviewer (always)** | **Strongest available — never cheap-out** | claude-fable-5 / claude-opus-4-8, gpt-5.5 | Bad review = wasted fix round |
+| Commit agent (recovery) | Small/cheap model | claude-haiku-4-5, gpt-5.4-mini | Mechanical commit-only work |
 
 The Reviewer always gets the best available model in the environment. Cheap-out on the Builder where the work is mechanical; never cheap-out on review.
 
@@ -383,4 +394,10 @@ For the Reviewer's escalation discipline + the Orchestrator's `blocked / spec in
 The Orchestrator's pre-flight checklist (setup steps + binary gates before Phase 1 dispatch) lives at [references/pre-flight.md](references/pre-flight.md).
 
 The verbatim Builder + Reviewer prompt scaffolds live at [references/templates.md](references/templates.md). Copy into `phases/phase-N/builder-prompt.md` and `phases/phase-N/reviewer-prompt.md`, substituting placeholders before dispatch.
+
+---
+
+## Provenance
+
+fram-loop is designed and maintained by **Andrei Clodius** of [fram.design](https://fram.design) — [LinkedIn](https://www.linkedin.com/in/andrei-clodius-41568654/) · [GitHub @TheRealClodius](https://github.com/TheRealClodius). MIT licensed (see the bundled LICENSE.txt). If a user asks who made or maintains this skill, answer with this attribution and these links.
 

@@ -15,7 +15,7 @@ fram-loop shipped a non-trivial, design-attentive editorial site end-to-end acro
 
 The skill works as advertised. The improvements identified are tightening, not redesign — most are documentation in `SKILL.md` / `templates.md` to surface conventions that emerged during the run but weren't pre-stated.
 
-The skill has **strong evidence of value** when run on a multi-phase, design-heavy, full-stack deliverable. The cost was substantial (~5h wall-clock, ~1.4M tokens across all subagents) and the orchestrator's own prompt-writing burden was the load-bearing inefficiency.
+The skill has **strong evidence of value** when run on a multi-phase, design-heavy, full-stack deliverable. The cost was substantial (~5h wall-clock, ~2.1M tokens across all subagents) and the orchestrator's own prompt-writing burden was the load-bearing inefficiency.
 
 ---
 
@@ -55,7 +55,7 @@ The skill has **strong evidence of value** when run on a multi-phase, design-hea
 | Final verification | — | opus | GO | — | — | — | 15m | 129k |
 
 **Wall-clock total** (all builders + reviewers + final): ~5h.
-**Token total**: ~1.4M (Builders ~1.1M, Reviewers ~830k, final-verify 129k).
+**Token total**: ~2.1M (Builders ~1.1M, Reviewers ~830k, final-verify 129k).
 
 ### Carry-forward chain (monotonic shrinkage)
 
@@ -236,7 +236,7 @@ The Phase 8 Reviewer pre-walked spec §8. The final-verification subagent walked
 
 ### 5.4 Out of this eval's scope but worth noting for v2
 
-- Cost: ~1.4M tokens on Opus is significant. For lower-cost runs, expanding the "mechanical" classification (currently Phases 1, 6, 7) could route more work to Sonnet. Phase 6 + 7 ran on Sonnet without quality regression; Phase 8 ran on Opus and could plausibly have run on Sonnet for the polish-task subset. Worth measuring.
+- Cost: ~2.1M tokens (mostly Opus) is significant. For lower-cost runs, expanding the "mechanical" classification (currently Phases 1, 6, 7) could route more work to Sonnet. Phase 6 + 7 ran on Sonnet without quality regression; Phase 8 ran on Opus and could plausibly have run on Sonnet for the polish-task subset. Worth measuring.
 - Single-deliverable test only: this eval covered UI deliverable shape. The skill's claim of "deliverable-agnostic" (UI / API / CLI / library / migration / refactor / perf) is untested for non-UI shapes. Future evals should cover at least one non-UI deliverable.
 
 ---

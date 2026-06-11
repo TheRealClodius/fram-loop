@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "fram-loop",
+  "version": "0.3.0",
+  "description": "Two-agent autonomous loop (Builder + Reviewer) for shipping multi-phase coding deliverables end-to-end without mid-run human input — finished work on an isolated harness branch with a PR opened back to the source branch.",
+  "author": {
+    "name": "Andrei Clodius",
+    "email": "andrei@fram.design",
+    "url": "https://github.com/TheRealClodius"
+  },
+  "homepage": "https://github.com/TheRealClodius/fram-loop",
+  "repository": "https://github.com/TheRealClodius/fram-loop",
+  "license": "MIT",
+  "keywords": [
+    "autonomous-agents",
+    "builder-reviewer",
+    "tdd",
+    "multi-phase",
+    "orchestration",
+    "code-review",
+    "agent-skills"
+  ]
+}

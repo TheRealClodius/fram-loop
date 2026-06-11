@@ -21,20 +21,27 @@ These quirks bite every run if not handled in the prompt itself:
 
 The Reviewer (and where supported, the Builder — see SKILL.md §Architecture > Roles) runs with a **narrower** `allowed-tools` set than the skill's front-matter. Two paths to actually narrow at dispatch time:
 
-### Claude Code (assumed-but-unverified — probe before relying on it)
+### Claude Code
 
-Define a project-local subagent at `.claude/agents/fram-loop-reviewer.md` (and optionally `fram-loop-builder.md`) with the narrowed `allowed-tools` in its own front-matter. Dispatch via `Agent(subagent_type: "fram-loop-reviewer", …)`. Example Reviewer subagent:
+Define a project-local subagent at `.claude/agents/fram-loop-reviewer.md` (and optionally `fram-loop-builder.md`). Dispatch via `Agent(subagent_type: "fram-loop-reviewer", …)`. The front-matter field is **`tools:`** (comma-separated tool names) — NOT `allowed-tools:`, which is silently ignored in agent definitions. The restriction is harness-enforced: a call to a tool absent from `tools:` fails.
+
+Two caveats on what the field can express:
+
+- **Granular `Bash(git log:*)`-style specifiers are not supported in `tools:`** — only whole tool names. The Reviewer needs `Bash` for git/curl/test commands, so shell granularity (no installs, no `git push`, only the slotted test/lint/typecheck invocations) stays prose-enforced via the prompt's "Allowed tools" block — optionally hardened with `permissions.deny` rules in the project's `.claude/settings.json`.
+- **What IS mechanically enforced:** omitting `Write`, `Edit`, and `NotebookEdit` makes the Reviewer read-only at the file layer by capability, not doctrine. For UI phases, add the verification-driver MCP tools the run needs (list them explicitly — they are not inherited).
+
+Example Reviewer subagent:
 
 ```markdown
 ---
 name: fram-loop-reviewer
 description: Read-only Reviewer for fram-loop phases — verification only, never implements
-allowed-tools: Read Glob Grep Bash(git log:*) Bash(git diff:*) Bash(git show:*) Bash(git checkout:*) Bash(git status:*) Bash(curl:*) Bash(npx vitest:*) Bash(npx eslint:*) Bash(npx tsc:*)
+tools: Read, Glob, Grep, Bash, ToolSearch
 ---
 You are the Reviewer agent for a fram-loop phase. […]
 ```
 
-**Probe step (run once before relying on it):** dispatch a Reviewer subagent and ask it to attempt a deliberately-omitted tool (e.g. `Write` or `Bash(npm:*)`). If the call fails with a permission error, narrowing is enforced — record the result in RUN.md "Operating notes." If the call succeeds despite being absent from the subagent's `allowed-tools`, narrowing is **prose-only** and the Reviewer's compliance with its in-prompt "Allowed tools" block is the only constraint. The probe result determines how hard you can rely on the narrowing in practice.
+**Probe step (run once before relying on it):** dispatch a Reviewer subagent and ask it to attempt a deliberately-omitted tool (e.g. `Write`). If the call fails, narrowing is enforced — record the result in RUN.md "Operating notes." If the call succeeds despite being absent from the subagent's `tools:`, the field name or harness version is off — treat narrowing as **prose-only** (the Reviewer's compliance with its in-prompt "Allowed tools" block is the only constraint) until fixed. The probe result determines how hard you can rely on the narrowing in practice.
 
 ### Codex / other harnesses
 
@@ -114,6 +121,7 @@ After the impl commit, exercise the deliverable end-to-end in production-shape u
 
 ```
 Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+(NEEDS_CONTEXT = a required input is missing but obtainable — name exactly what; the Orchestrator re-dispatches with the gap filled. BLOCKED = cannot proceed even with more context.)
 
 ### Tasks
 Per task: test SHA → impl SHA, test results, files changed, smoke notes (driver-appropriate), any concerns.
