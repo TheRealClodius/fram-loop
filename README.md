@@ -14,7 +14,7 @@ gh skill install TheRealClodius/fram-loop
 npx skills add TheRealClodius/fram-loop
 ```
 
-The skill follows the [agentskills.io](https://agentskills.io) convention, so either installer can target any agent that supports it — Claude Code, Codex CLI, Copilot, Cursor, Gemini CLI, Antigravity, etc. (`gh skill install --agent claude-code` to pick the target).
+The skill follows the [agentskills.io](https://agentskills.io) convention, so either installer can target any agent that supports it — Claude Code, Codex CLI, Copilot, Cursor, Gemini CLI, Antigravity, etc. (`gh skill install --agent claude-code` to pick the target). You can also browse it on [skills.sh](https://www.skills.sh/TheRealClodius/fram-loop/fram-loop).
 
 ## Use
 
